@@ -47,7 +47,7 @@ def test_plot_marginal_2d_smoke():
             ],  # Normalized values for Dataset 2
         }
     )
-    # Step 1: Add a distinguishing column to each DataFrame and combine them
+    # Add a distinguishing column to each DataFrame and combine them
     df1 = df1.with_columns(pl.lit("Dataset 1").alias("Source"))
     df2 = df2.with_columns(pl.lit("Dataset 2").alias("Source"))
     combined_df = pl.concat([df1, df2])
