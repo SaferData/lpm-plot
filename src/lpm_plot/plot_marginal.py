@@ -139,7 +139,7 @@ def plot_marginal_2d(combined_df, x, y, hm_order=None, cmap="oranges"):
     )
     # Check if users wanted to order the datasources.
     if hm_order is None:
-        order = combined_df["Source"].unique()
+        order = sorted(combined_df["Source"].unique())
     else:
         order = hm_order
     heatmaps = [
