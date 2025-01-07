@@ -6,6 +6,7 @@ SYNTHETIC_COLOR = "#f28e2b"
 
 alt.data_transformers.enable("vegafusion")
 
+
 def get_max_frequency(column, data):
     # Group by `data_source` and the given `column`, then count occurrences
     result = (
@@ -77,7 +78,8 @@ def plot_marginal_1d(observed_df, synthetic_df, columns):
                     ),
                 ),
                 color=alt.value(color),
-            ).transform_filter(f"datum.{field} != null")  # Filter out null values
+            )
+            .transform_filter(f"datum.{field} != null")  # Filter out null values
         )
 
     # Creating the charts for observed and synthetic collections
