@@ -1,18 +1,25 @@
-[tool.poetry]
+[project]
 name = "lpm_plot"
 version = "0.0.1"
 license = "Apache-2.0"
 description = ""
-authors = ["Ulli Schaechtle <ulli@mit.edu>"]
+authors = [
+  {name = "Ulrich Schaechtle", email = "u.schaechtle@gmail.com"},
+  {name = "eve n.u.", email = "eve@eatbigger.fish"},
+]
 readme = "README.md"
 packages = [{include = "lpm_plot", from = "src"}]
+requires-python = "^3.12"
+
+[tool.poetry]
+requires-poetry = ">=2.0"
 
 [tool.poetry.dependencies]
 python = "^3.12"
 altair = "^5.4.1"
 pandas = "^2.2.3" # Need pandas because of altair
 polars = "^1.7.1"
-pyarrow = "^17.0.0"
+pyarrow = "^18.1.0"
 vegafusion = "^1.6.9"
 vegafusion-python-embed = "^1.6.9"
 vl-convert-python = "^1.7.0"
