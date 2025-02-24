@@ -9,7 +9,7 @@ authors = [
 ]
 readme = "README.md"
 packages = [{include = "lpm_plot", from = "src"}]
-requires-python = "^3.12"
+requires-python = ">=3.12"
 
 [tool.poetry]
 requires-poetry = ">=2.0"
