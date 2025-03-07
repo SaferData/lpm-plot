@@ -16,39 +16,23 @@ jobs:
         python-version: ["3.12"]
 
     steps:
-    - uses: actions/checkout@v4
-    - name: Set up Python ${{ matrix.python-version }}
-      uses: actions/setup-python@v3
+    - name: Checkout the repository
+      uses: actions/checkout@v4
+
+    - name: Install the latest version of uv
+      uses: astral-sh/setup-uv@v5
       with:
         python-version: ${{ matrix.python-version }}
 
-    - name: Install Poetry
-      uses: snok/install-poetry@v1
-      with:
-        virtualenvs-create: true
-        virtualenvs-in-project: true
-        virtualenvs-path: .venv
-
-    - name: Load cached venv
-      id: cached-poetry-dependencies
-      uses: actions/cache@v4
-      with:
-        path: .venv
-        key: venv-${{ runner.os }}-${{ steps.setup-python.outputs.python-version }}-${{ hashFiles('**/poetry.lock') }}
-
-    # ----------------------------------------------
-    #  install dependencies if cache does not exist
-    # ----------------------------------------------
-    - name: Install dependencies
-      if: steps.cached-poetry-dependencies.outputs.cache-hit != 'true'
-      run: poetry install
-
-    - name: Install dependencies
+    - name: Sync the environment with what is in uv.lock
       run: |
-        poetry install
+        uv sync --frozen
+
     - name: Test with pytest
       run: |
-        poetry run pytest
+        uv run --frozen pytest
+
     - name: Lint with black
       run: |
-        poetry run black --check src/
+        uv run --frozen black --check src/
+        uv run --frozen black --check tests/
