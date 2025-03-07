@@ -5,10 +5,10 @@ that make Altair visualizations out of population data in conventional ways.
 
 This is pre-release software and comes with no warranty.
 
-To get started, install [poetry](https://github.com/python-poetry/), then:
+To get started, install [uv](https://docs.astral.sh/uv/getting-started/installation/), then:
 
 ```
-poetry install
-poetry run pytest
+uv sync
+uv run pytest
 ```
 
