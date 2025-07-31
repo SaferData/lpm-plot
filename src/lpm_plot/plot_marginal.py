@@ -160,3 +160,48 @@ def plot_marginal_numerical_numerical(observed_df, synthetic_df, x, y):
     chart2 = alt.Chart(synthetic_df).mark_circle(color=SYNTHETIC_COLOR).encode(x=x, y=y)
     return chart1 + chart2
 
+
+def plot_marginal_numerical_categorical(observed_df, synthetic_df, x, y, size):
+    observed_df_labeled = observed_df.with_columns(pl.lit("Observed").alias("dataset"))
+    synthetic_df_labeled = synthetic_df.with_columns(
+        pl.lit("Synthetic").alias("dataset")
+    )
+
+    observed_melted = observed_df_labeled.melt(
+        id_vars=["dataset"],
+        value_vars=[col for col in observed_df_labeled.columns if col != "dataset"],
+        variable_name=x,
+        value_name=y,
+    )
+    synthetic_melted = synthetic_df_labeled.melt(
+        id_vars=["dataset"],
+        value_vars=[col for col in synthetic_df_labeled.columns if col != "dataset"],
+        variable_name=x,
+        value_name=y,
+    )
+
+    combined_df = pl.concat([observed_melted, synthetic_melted])
+
+    return (
+        alt.Chart(combined_df)
+        .mark_boxplot(size=size, outliers=True)
+        .encode(
+            x=alt.X(f"{x}:N", scale=alt.Scale(padding=0.5)),
+            y=f"{y}:Q",
+            color=alt.Color(
+                "dataset:N",
+                scale=alt.Scale(
+                    domain=["Observed", "Synthetic"],
+                    range=[OBSERVED_COLOR, SYNTHETIC_COLOR],
+                ),
+            ),
+            xOffset=alt.XOffset(
+                "dataset:N",
+                scale=alt.Scale(
+                    domain=["Observed", "Synthetic"],
+                    range=[-size, size],
+                ),
+            ),
+        )
+        .properties(width=(size * 2 + 50) * combined_df[x].n_unique())
+    )
