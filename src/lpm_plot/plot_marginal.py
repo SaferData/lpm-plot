@@ -1,5 +1,5 @@
-import polars as pl
 import altair as alt
+import polars as pl
 
 OBSERVED_COLOR = "#000000"
 SYNTHETIC_COLOR = "#f28e2b"
@@ -153,3 +153,10 @@ def plot_marginal_2d(combined_df, x, y, hm_order=None, cmap="oranges"):
         color="shared"  # Share the color scale between the heatmaps
     )
     return combined_heatmap
+
+
+def plot_marginal_numerical_numerical(observed_df, synthetic_df, x, y):
+    chart1 = alt.Chart(observed_df).mark_circle(color=OBSERVED_COLOR).encode(x=x, y=y)
+    chart2 = alt.Chart(synthetic_df).mark_circle(color=SYNTHETIC_COLOR).encode(x=x, y=y)
+    return chart1 + chart2
+
