@@ -1,11 +1,11 @@
 import altair as alt
-import polars as pl
-from scipy.cluster.hierarchy import linkage, leaves_list
-from scipy.spatial.distance import squareform
 import numpy as np
+import polars as pl
+from scipy.cluster.hierarchy import leaves_list, linkage
+from scipy.spatial.distance import squareform
 
 
-def plot_heatmap(df: pl.DataFrame, cmap="greens"):
+def plot_heatmap(df: pl.DataFrame, detailed_df: pl.DataFrame = None, cmap="greens"):
     """
     Generates a clustered heatmap using hierarchical clustering on a Polars DataFrame and visualizes it with Altair.
 
@@ -15,7 +15,9 @@ def plot_heatmap(df: pl.DataFrame, cmap="greens"):
         A Polars DataFrame containing the data to be plotted, with columns "Column 1", "Column 2", and "Score".
         "Column 1" and "Column 2" represent categorical labels along the x- and y-axes, respectively,
         while "Score" provides quantitative values for coloring the heatmap.
-    cmap : str, optional
+    detailed_df : pl.DataFrame, optional
+        A Polars DataFrame containing more detailed data about the data in df.
+    cmaps : str, optional
         Color scheme name for the heatmap. Defaults to "greens".
 
     Returns
@@ -52,10 +54,15 @@ def plot_heatmap(df: pl.DataFrame, cmap="greens"):
 
     # Get the order of the rows/columns after clustering
     order = [df_pivot.index[i] for i in leaves_list(linkage_matrix)]
+
+    #
+    click = alt.selection_point(fields=["Column 1", "Column 2"], on="click")
+
     # Create the heatmap using Altair
     base = (
         alt.Chart(df_pandas)
         .mark_rect()
+        .add_params(click)
         .encode(
             x=alt.X(
                 "Column 1:N",
@@ -74,5 +81,44 @@ def plot_heatmap(df: pl.DataFrame, cmap="greens"):
             tooltip=["Column 1", "Column 2", "Score:Q"],
         )
     )
+    if detailed_df is not None:
+        detail_charts = (
+            alt.layer(
+                # Numerical vs Numerical - Scatter Plot
+                alt.Chart(detailed_df)
+                .mark_circle(size=60)
+                .encode(
+                    x=alt.X("x_data:Q"),
+                    y=alt.Y("y_data:Q"),
+                    tooltip=["x_data:Q", "y_data:Q"],
+                )
+                .transform_filter(click & (alt.datum.comparison_type == "num-num")),
+                # Numerical vs Categorical - Box Plot
+                alt.Chart(detailed_df)
+                .mark_boxplot(size=60)
+                .encode(
+                    x=alt.X("x_data:N", scale=alt.Scale(padding=0.5)),
+                    y="y_data:Q",
+                    tooltip=["x_data:N", "y_data:Q"],
+                )
+                .transform_filter(click & (alt.datum.comparison_type == "num-cat")),
+                # Categorical vs Categorical - Heatmap
+                alt.Chart(detailed_df)
+                .mark_rect()
+                .encode(
+                    x=alt.X("x_data:N"),
+                    y=alt.Y("y_data:N"),
+                    color=alt.Color(
+                        "heat_score:Q",
+                        scale=alt.Scale(scheme=cmap),
+                    ),
+                    tooltip=["x_data:N", "y_data:N", "heat_score:Q"],
+                )
+                .transform_filter(click & (alt.datum.comparison_type == "cat-cat")),
+            )
+            .resolve_scale(x="independent", y="independent")
+            .properties(width=300, height=200)
+        )
 
+        return alt.hconcat(base, detail_charts)
     return base

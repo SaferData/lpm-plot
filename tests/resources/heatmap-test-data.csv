@@ -1,0 +1,17 @@
+Column 1,Column 2,Score
+num1,num1,
+num1,num2,0.75
+num1,cat1,0.42
+num1,cat2,0.38
+num2,num1,0.75
+num2,num2,
+num2,cat1,0.68
+num2,cat2,0.33
+cat1,num1,0.42
+cat1,num2,0.68
+cat1,cat1,
+cat1,cat2,0.59
+cat2,num1,0.38
+cat2,num2,0.33
+cat2,cat1,0.59
+cat2,cat2,
