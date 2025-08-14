@@ -155,18 +155,92 @@ def plot_marginal_2d(combined_df, x, y, hm_order=None, cmap="oranges"):
     return combined_heatmap
 
 
-def plot_marginal_numerical_numerical(observed_df, synthetic_df, x, y):
-    chart1 = alt.Chart(observed_df).mark_circle(color=OBSERVED_COLOR).encode(x=x, y=y)
-    chart2 = alt.Chart(synthetic_df).mark_circle(color=SYNTHETIC_COLOR).encode(x=x, y=y)
+def plot_marginal_numerical_numerical(
+    observed_df: pl.DataFrame,
+    synthetic_df: pl.DataFrame,
+    x: str,
+    y: str,
+    x_domain: tuple[float, float] = [0.0, 10.0],
+    y_domain: tuple[float, float] = [0.0, 10.0],
+):
+    """
+    Plots 2D marginal scatter plot comparing numerical observed and synthetic data
+    which are displayed black and orange respectively
+
+    Args:
+        observed_df : pl.DataFrame
+            A Polars DataFrame containing the observed data and it must contain the columns specified by `x`, `y`
+        synthetic_df : pl.DataFrame
+            A Polars DataFrame containing the synthetic data and it must contain the columns specified by `x`, `y`
+        x : str
+            The name of the first numerical column (horizontal axis of the plot).
+        y : str
+            The name of the second numerical column (vertical axis of the plot).
+        x_domain : tuple[float, float], optional
+            The domain of the x-axis and defaults to 0-10
+        y_domain : tuple[float, float], optional
+            The domain of the y-axis and defaults to 0-10
+
+    Returns:
+        alt.Chart: An Altair chart object containing the scatter plot.
+    """
+    # Chart for observed data
+    chart1 = (
+        alt.Chart(observed_df)
+        .mark_circle(color=OBSERVED_COLOR)
+        .encode(
+            x=alt.X(x, scale=alt.Scale(domain=x_domain)),
+            y=alt.Y(y, scale=alt.Scale(domain=y_domain)),
+        )
+    )
+    # Chart for synthetic data
+    chart2 = (
+        alt.Chart(synthetic_df)
+        .mark_circle(color=SYNTHETIC_COLOR)
+        .encode(
+            x=alt.X(x, scale=alt.Scale(domain=x_domain)),
+            y=alt.Y(y, scale=alt.Scale(domain=y_domain)),
+        )
+    )
     return chart1 + chart2
 
 
-def plot_marginal_numerical_categorical(observed_df, synthetic_df, x, y, size):
+def plot_marginal_numerical_categorical(
+    observed_df: pl.DataFrame,
+    synthetic_df: pl.DataFrame,
+    x: str,
+    y: str,
+    size: float = 30.0,
+):
+    """
+    Plots 2D marginal box plot comparing numerical vs categorical observed and synthetic data
+    which are displayed black and orange respectively
+
+    Args:
+        observed_df : pl.DataFrame
+            A Polars DataFrame containing the observed data and it must contain the columns named
+            after each category and are filled with the data points for that category
+        synthetic_df : pl.DataFrame
+            A Polars DataFrame containing the synthetic data and it must contain the columns named
+            after each category and are filled with the data points for that category. Must have the
+            same columns as the observed dataframe
+        x : str
+            The name of the categorical data (horizontal axis of the plot).
+        y : str
+            The name of the numerical data (vertical axis of the plot).
+        size : float, optional
+            The width of the box plot boxes
+
+    Returns:
+        alt.Chart: An Altair chart object containing the box plot.
+    """
+    # Add a new column to distinguish which data set the data came from
     observed_df_labeled = observed_df.with_columns(pl.lit("Observed").alias("dataset"))
     synthetic_df_labeled = synthetic_df.with_columns(
         pl.lit("Synthetic").alias("dataset")
     )
 
+    # Melt data to a format that the box plot can use
     observed_melted = observed_df_labeled.melt(
         id_vars=["dataset"],
         value_vars=[col for col in observed_df_labeled.columns if col != "dataset"],
@@ -188,6 +262,7 @@ def plot_marginal_numerical_categorical(observed_df, synthetic_df, x, y, size):
         .encode(
             x=alt.X(f"{x}:N", scale=alt.Scale(padding=0.5)),
             y=f"{y}:Q",
+            # Give the box different color based on which dataset it was from
             color=alt.Color(
                 "dataset:N",
                 scale=alt.Scale(
@@ -197,6 +272,7 @@ def plot_marginal_numerical_categorical(observed_df, synthetic_df, x, y, size):
             ),
             xOffset=alt.XOffset(
                 "dataset:N",
+                # Shift the box to the left or righ based on which dataset it was from
                 scale=alt.Scale(
                     domain=["Observed", "Synthetic"],
                     range=[-size, size],
