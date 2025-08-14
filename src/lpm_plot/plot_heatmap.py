@@ -5,7 +5,11 @@ from scipy.cluster.hierarchy import leaves_list, linkage
 from scipy.spatial.distance import squareform
 
 
-def plot_heatmap(df: pl.DataFrame, detailed_df: pl.DataFrame = None, cmap="greens"):
+def plot_heatmap(
+    df: pl.DataFrame,
+    detailed_df: pl.DataFrame = None,
+    cmaps: tuple[str, str] = ["greens", "reds"],
+):
     """
     Generates a clustered heatmap using hierarchical clustering on a Polars DataFrame and visualizes it with Altair.
 
@@ -16,9 +20,9 @@ def plot_heatmap(df: pl.DataFrame, detailed_df: pl.DataFrame = None, cmap="green
         "Column 1" and "Column 2" represent categorical labels along the x- and y-axes, respectively,
         while "Score" provides quantitative values for coloring the heatmap.
     detailed_df : pl.DataFrame, optional
-        A Polars DataFrame containing more detailed data about the data in df.
-    cmaps : str, optional
-        Color scheme name for the heatmap. Defaults to "greens".
+        A Polars DataFrame containing more detailed data about the data in df that is displayed when clicking heatmap cells.
+    cmaps : tuple[str, str], optional
+        Color scheme name for the main heatmap and detail heatmaps. Defaults to "greens" and "reds" respectively.
 
     Returns
     -------
@@ -55,7 +59,7 @@ def plot_heatmap(df: pl.DataFrame, detailed_df: pl.DataFrame = None, cmap="green
     # Get the order of the rows/columns after clustering
     order = [df_pivot.index[i] for i in leaves_list(linkage_matrix)]
 
-    #
+    # Define filter fields for selected cells
     click = alt.selection_point(fields=["Column 1", "Column 2"], on="click")
 
     # Create the heatmap using Altair
@@ -75,50 +79,81 @@ def plot_heatmap(df: pl.DataFrame, detailed_df: pl.DataFrame = None, cmap="green
                 sort=order,  # Replace with your desired order
             ),
             color=alt.Color(
-                "Score:Q",
-                scale=alt.Scale(scheme=cmap),
+                "Score:Q", scale=alt.Scale(scheme=cmaps[0]), legend=alt.Legend()
             ),
             tooltip=["Column 1", "Column 2", "Score:Q"],
         )
     )
-    if detailed_df is not None:
-        detail_charts = (
-            alt.layer(
-                # Numerical vs Numerical - Scatter Plot
-                alt.Chart(detailed_df)
-                .mark_circle(size=60)
-                .encode(
-                    x=alt.X("x_data:Q"),
-                    y=alt.Y("y_data:Q"),
-                    tooltip=["x_data:Q", "y_data:Q"],
-                )
-                .transform_filter(click & (alt.datum.comparison_type == "num-num")),
-                # Numerical vs Categorical - Box Plot
-                alt.Chart(detailed_df)
-                .mark_boxplot(size=60)
-                .encode(
-                    x=alt.X("x_data:N", scale=alt.Scale(padding=0.5)),
-                    y="y_data:Q",
-                    tooltip=["x_data:N", "y_data:Q"],
-                )
-                .transform_filter(click & (alt.datum.comparison_type == "num-cat")),
-                # Categorical vs Categorical - Heatmap
-                alt.Chart(detailed_df)
-                .mark_rect()
-                .encode(
-                    x=alt.X("x_data:N"),
-                    y=alt.Y("y_data:N"),
-                    color=alt.Color(
-                        "heat_score:Q",
-                        scale=alt.Scale(scheme=cmap),
-                    ),
-                    tooltip=["x_data:N", "y_data:N", "heat_score:Q"],
-                )
-                .transform_filter(click & (alt.datum.comparison_type == "cat-cat")),
-            )
-            .resolve_scale(x="independent", y="independent")
-            .properties(width=300, height=200)
-        )
+    # Return heatmap if no detailed data is provided
+    if detailed_df is None:
+        return base
 
-        return alt.hconcat(base, detail_charts)
-    return base
+    # Scatter plot when the data compared are both numerical
+    scatter_plot = alt.layer(
+        # Scatter plot
+        alt.Chart(detailed_df)
+        .mark_circle(size=60)
+        .encode(
+            x=alt.X("x_data:Q", title=None, axis=alt.Axis(orient="bottom")),
+            y=alt.Y("y_data:Q", title=None, axis=alt.Axis(orient="left")),
+            tooltip=["x_data:Q", "y_data:Q"],
+        ),
+        # X axis label
+        alt.Chart(detailed_df).mark_text(y=350).encode(text="Column 1:N"),
+        # Y axis label
+        alt.Chart(detailed_df).mark_text(x=-50, angle=270).encode(text="Column 2:N"),
+    ).transform_filter(click & (alt.datum.comparison_type == "num-num"))
+
+    # Box plot when the data compared is numerical and categorical
+    box_plot = alt.layer(
+        # Box plot
+        alt.Chart(detailed_df)
+        .mark_boxplot(size=60)
+        .encode(
+            x=alt.X(
+                "x_data:N",
+                scale=alt.Scale(padding=0.5),
+                title=None,
+                axis=alt.Axis(orient="bottom"),
+            ),
+            y=alt.Y("y_data:Q", title=None, axis=alt.Axis(orient="right")),
+            tooltip=["x_data:N", "y_data:Q"],
+        ),
+        # X axis label
+        alt.Chart(detailed_df).mark_text(y=350).encode(text="Column 1:N"),
+        # Y axis label
+        alt.Chart(detailed_df).mark_text(x=350, angle=270).encode(text="Column 2:N"),
+    ).transform_filter(click & (alt.datum.comparison_type == "num-cat"))
+
+    # Heat map when the data compared are both categorical
+    heatmap = alt.layer(
+        # Heat map
+        alt.Chart(detailed_df)
+        .mark_rect()
+        .encode(
+            x=alt.X("x_data:N", title=None, axis=alt.Axis(orient="bottom")),
+            y=alt.Y("y_data:N", title=None, axis=alt.Axis(orient="left")),
+            color=alt.Color(
+                "heat_score:Q",
+                scale=alt.Scale(scheme=cmaps[1]),
+                legend=alt.Legend(offset=60),
+            ),
+            tooltip=["x_data:N", "y_data:N", "heat_score:Q"],
+        ),
+        # X axis label
+        alt.Chart(detailed_df).mark_text(y=350).encode(text="Column 1:N"),
+        # Y axis label
+        alt.Chart(detailed_df).mark_text(x=-50, angle=270).encode(text="Column 2:N"),
+    ).transform_filter(click & (alt.datum.comparison_type == "cat-cat"))
+
+    # Layer charts together
+    detail_charts = (
+        alt.layer(scatter_plot, box_plot, heatmap)
+        .resolve_scale(x="shared", y="shared", color="independent")
+        .properties(
+            width=300,
+            height=300,
+        )
+    )
+
+    return alt.vconcat(base, detail_charts)
