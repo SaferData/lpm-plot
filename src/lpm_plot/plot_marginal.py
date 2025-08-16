@@ -160,8 +160,8 @@ def plot_marginal_numerical_numerical(
     synthetic_df: pl.DataFrame,
     x: str,
     y: str,
-    x_domain: tuple[float, float] = [0.0, 10.0],
-    y_domain: tuple[float, float] = [0.0, 10.0],
+    x_domain: tuple[float | None, float | None] = [None, None],
+    y_domain: tuple[float | None, float | None] = [None, None],
 ):
     """
     Plots 2D marginal scatter plot comparing numerical observed and synthetic data
@@ -176,14 +176,33 @@ def plot_marginal_numerical_numerical(
             The name of the first numerical column (horizontal axis of the plot).
         y : str
             The name of the second numerical column (vertical axis of the plot).
-        x_domain : tuple[float, float], optional
-            The domain of the x-axis and defaults to 0-10
-        y_domain : tuple[float, float], optional
-            The domain of the y-axis and defaults to 0-10
+        x_domain : tuple[float | None, float | None], optional
+            The domain of the x-axis and defaults to min and max of data. If None is provided instead of a min
+            or a max, then the program will default to using the min or max of the data respectively.
+        y_domain : tuple[float | None, float | None], optional
+            The domain of the y-axis and defaults to min and max of data. If None is provided instead of a min
+            or a max, then the program will default to using the min or max of the data respectively.
 
     Returns:
         alt.Chart: An Altair chart object containing the scatter plot.
     """
+    # Calculate domains if no domains are provided
+    x_domain = [
+        min(observed_df[x].min(), synthetic_df[x].min())
+        if x_domain[0] is None
+        else x_domain[0],
+        max(observed_df[x].max(), synthetic_df[x].max())
+        if x_domain[1] is None
+        else x_domain[1],
+    ]
+    y_domain = [
+        min(observed_df[y].min(), synthetic_df[y].min())
+        if y_domain[0] is None
+        else y_domain[0],
+        max(observed_df[y].max(), synthetic_df[y].max())
+        if y_domain[1] is None
+        else y_domain[1],
+    ]
     # Chart for observed data
     chart1 = (
         alt.Chart(observed_df)
@@ -211,6 +230,7 @@ def plot_marginal_numerical_categorical(
     x: str,
     y: str,
     size: float = 30.0,
+    y_domain: tuple[float, float] = [None, None],
 ):
     """
     Plots 2D marginal box plot comparing numerical vs categorical observed and synthetic data
@@ -218,18 +238,23 @@ def plot_marginal_numerical_categorical(
 
     Args:
         observed_df : pl.DataFrame
-            A Polars DataFrame containing the observed data and it must contain the columns named
-            after each category and are filled with the data points for that category
+            A Polars DataFrame containing the observed data. The columns of the dataframe should be the names
+            of each category of the categorical data and each column contains the numerical data pertaining to that
+            category.
         synthetic_df : pl.DataFrame
-            A Polars DataFrame containing the synthetic data and it must contain the columns named
-            after each category and are filled with the data points for that category. Must have the
+            A Polars DataFrame containing the synthetix data. The columns of the dataframe should be the names
+            of each category of the categorical data and each column contains the numerical data pertaining to that
+            category. Must have the
             same columns as the observed dataframe
         x : str
             The name of the categorical data (horizontal axis of the plot).
         y : str
             The name of the numerical data (vertical axis of the plot).
         size : float, optional
-            The width of the box plot boxes
+            The width of the box plot boxes.
+        y_domain : tuple[float, float], optional
+            The domain of the y-axis and defaults to min and max of data. If None is provided instead of a min
+            or a max, then the program will default to using the min or max of the data respectively.
 
     Returns:
         alt.Chart: An Altair chart object containing the box plot.
@@ -240,28 +265,20 @@ def plot_marginal_numerical_categorical(
         pl.lit("Synthetic").alias("dataset")
     )
 
-    # Melt data to a format that the box plot can use
-    observed_melted = observed_df_labeled.melt(
-        id_vars=["dataset"],
-        value_vars=[col for col in observed_df_labeled.columns if col != "dataset"],
-        variable_name=x,
-        value_name=y,
-    )
-    synthetic_melted = synthetic_df_labeled.melt(
-        id_vars=["dataset"],
-        value_vars=[col for col in synthetic_df_labeled.columns if col != "dataset"],
-        variable_name=x,
-        value_name=y,
-    )
+    combined_df = pl.concat([observed_df_labeled, synthetic_df_labeled])
 
-    combined_df = pl.concat([observed_melted, synthetic_melted])
+    # Calculate y_domain if no domain is provided
+    y_domain = [
+        combined_df[y].min() if y_domain[0] is None else y_domain[0],
+        combined_df[y].max() if y_domain[1] is None else y_domain[1],
+    ]
 
     return (
         alt.Chart(combined_df)
         .mark_boxplot(size=size, outliers=True)
         .encode(
             x=alt.X(f"{x}:N", scale=alt.Scale(padding=0.5)),
-            y=f"{y}:Q",
+            y=alt.Y(f"{y}:Q", scale=alt.Scale(domain=y_domain)),
             # Give the box different color based on which dataset it was from
             color=alt.Color(
                 "dataset:N",
