@@ -1,8 +1,8 @@
 Column 1,Column 2,comparison_type,x_data,y_data
-num1,num1,same-same,0,0
-num2,num2,same-same,0,0
-cat1,cat1,same-same,0,0
-cat2,cat2,same-same,0,0
+num1,num1,same-same
+num2,num2,same-same
+cat1,cat1,same-same
+cat2,cat2,same-same
 
 num1,num2,num-num,1.2,3.5
 num1,num2,num-num,4.0,2.4

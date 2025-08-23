@@ -87,11 +87,15 @@ def plot_heatmap(
                 title="Column 2",
                 sort=order,  # Replace with your desired order
             ),
-            color=alt.Color(
-                "Score:Q", scale=alt.Scale(scheme=cmap_main), legend=alt.Legend()
+            color=alt.condition(
+                alt.datum.Score == 0,
+                alt.value("white"),
+                alt.Color(
+                    "Score:Q", scale=alt.Scale(scheme=cmap_main), legend=alt.Legend()
+                ),
             ),
             tooltip=["Column 1", "Column 2", "Score:Q"],
-        )
+        )  # Default scale
     )
 
     # Return heatmap if no detailed data is provided
@@ -99,56 +103,43 @@ def plot_heatmap(
         return base
 
     cat_cat_df = detailed_df.filter(pl.col("comparison_type") == "cat-cat")
+
+    counted_df = (
+        cat_cat_df.group_by(
+            ["Column 1", "Column 2", "comparison_type", "x_data", "y_data"]
+        )
+        .len()
+        .rename({"len": "Frequency"})
+    )
+
     column_combos = cat_cat_df["Column 1", "Column 2"].unique()
-    column_df_combos: list[pl.DataFrame] = []
-    for combo in column_combos:
-        column_df_combos.append(
+    combo_filtered_dfs: list[pl.DataFrame] = []
+    for combo in column_combos.iter_rows():
+        combo_filtered_dfs.append(
             cat_cat_df.filter(
                 (pl.col("Column 1") == combo[0]) & (pl.col("Column 2") == combo[1])
-            )
+            ).unique(subset=["x_data", "y_data"])
         )
 
-    freq_dfs: list[pl.DataFrame] = []
-    for df_combo in column_df_combos:
-        actual_counts = (
-            df_combo.group_by(
-                ["Column 1", "Column 2", "comparison_type", "x_data", "y_data"]
-            )
-            .len()
-            .rename({"len": "Frequency"})
-        )
-
-        col1 = df_combo["Column 1"].unique()[0]
-        col2 = df_combo["Column 2"].unique()[0]
-        x_vals = df_combo["x_data"].unique().to_list()
-        y_vals = df_combo["y_data"].unique().to_list()
-
-        all_combinations = []
+    for combo_filered_df in combo_filtered_dfs:
+        combos = combo_filered_df["x_data", "y_data"].rows()
+        x_vals = combo_filered_df["x_data"].unique()
+        y_vals = combo_filered_df["y_data"].unique()
         for x in x_vals:
             for y in y_vals:
-                all_combinations.append((x, y))
-
-        complete_grid = pl.DataFrame(
-            {
-                "Column 1": [col1 for i in range(len(all_combinations))],
-                "Column 2": [col2 for i in range(len(all_combinations))],
-                "comparison_type": ["cat-cat" for i in range(len(all_combinations))],
-                "x_data": [x for x, y in all_combinations],
-                "y_data": [y for x, y in all_combinations],
-            }
-        )
-
-        freq_dfs.append(
-            complete_grid.join(
-                actual_counts,
-                on=["Column 1", "Column 2", "comparison_type", "x_data", "y_data"],
-                how="left",
-            ).with_columns(pl.col("Frequency").fill_null(0))
-        )
-    detailed_df = detailed_df.filter(
-        pl.col("comparison_type") != "cat-cat"
-    ).with_columns(pl.lit(0, dtype=pl.UInt32).alias("Frequency"))
-    detailed_df = pl.concat([detailed_df, pl.concat(freq_dfs)])
+                if not x == y and (x, y) not in combos:
+                    counted_df = counted_df.vstack(
+                        pl.DataFrame(
+                            [combo_filered_df.row(0)[:3] + (x, y, 0)],
+                            schema=counted_df.schema,
+                            orient="row",
+                        )
+                    )
+    detailed_df = (
+        detailed_df.filter(pl.col("comparison_type") != "cat-cat")
+        .with_columns(pl.lit(0, dtype=pl.UInt32).alias("Frequency"))
+        .vstack(counted_df)
+    )
 
     empty = (
         alt.Chart(detailed_df)
@@ -157,24 +148,19 @@ def plot_heatmap(
     )
 
     # Scatter plot when the data compared are both numerical
-    scatter_plot = alt.layer(
-        # Scatter plot
+    scatter_plot = (
         alt.Chart(detailed_df)
         .mark_circle(size=60, color=detail_color)
         .encode(
             x=alt.X("x_data:Q", title=None, axis=alt.Axis(orient="bottom")),
             y=alt.Y("y_data:Q", title=None, axis=alt.Axis(orient="left")),
             tooltip=["x_data:Q", "y_data:Q"],
-        ),
-        # X axis label
-        alt.Chart(detailed_df).mark_text(y=350).encode(text="Column 1:N"),
-        # Y axis label
-        alt.Chart(detailed_df).mark_text(x=-50, angle=270).encode(text="Column 2:N"),
-    ).transform_filter(click & (alt.datum.comparison_type == "num-num"))
+        )
+        .transform_filter(click & (alt.datum.comparison_type == "num-num"))
+    )
 
     # Box plot when the data compared is numerical and categorical
-    box_plot_horizontal = alt.layer(
-        # Box plot
+    box_plot_horizontal = (
         alt.Chart(detailed_df)
         .mark_boxplot(size=60, color=detail_color)
         .encode(
@@ -186,16 +172,12 @@ def plot_heatmap(
                 axis=alt.Axis(orient="left"),
             ),
             tooltip=["x_data:N", "y_data:Q"],
-        ),
-        # X axis label
-        alt.Chart(detailed_df).mark_text(y=350).encode(text="Column 1:N"),
-        # Y axis label
-        alt.Chart(detailed_df).mark_text(x=350, angle=270).encode(text="Column 2:N"),
-    ).transform_filter(click & (alt.datum.comparison_type == "num-cat"))
+        )
+        .transform_filter(click & (alt.datum.comparison_type == "num-cat"))
+    )
 
     # Box plot when the data compared is categorical and numerical
-    box_plot_vertical = alt.layer(
-        # Box plot
+    box_plot_vertical = (
         alt.Chart(detailed_df)
         .mark_boxplot(size=60, color=detail_color)
         .encode(
@@ -207,42 +189,124 @@ def plot_heatmap(
             ),
             y=alt.Y("y_data:Q", title=None, axis=alt.Axis(orient="right")),
             tooltip=["x_data:N", "y_data:Q"],
-        ),
-        # X axis label
-        alt.Chart(detailed_df).mark_text(y=350).encode(text="Column 1:N"),
-        # Y axis label
-        alt.Chart(detailed_df).mark_text(x=350, angle=270).encode(text="Column 2:N"),
-    ).transform_filter(click & (alt.datum.comparison_type == "cat-num"))
+        )
+        .transform_filter(click & (alt.datum.comparison_type == "cat-num"))
+    )
 
     # Heat map when the data compared are both categorical
-    heatmap = alt.layer(
-        # Heat map
+    heatmap = (
         alt.Chart(detailed_df)
-        .mark_rect(stroke="white")
+        .mark_rect()
         .encode(
             x=alt.X("x_data:N", title=None, axis=alt.Axis(orient="bottom")),
             y=alt.Y("y_data:N", title=None, axis=alt.Axis(orient="left")),
-            color=alt.Color(
-                "Frequency:Q",
-                scale=alt.Scale(scheme=cmap_detail, domainMin=0),
-                legend=alt.Legend(offset=60),
+            color=alt.condition(
+                alt.datum.Frequency == 0,
+                alt.value("white"),
+                alt.Color(
+                    "Frequency:Q",
+                    scale=alt.Scale(scheme=cmap_detail, domainMin=0),
+                    legend=alt.Legend(offset=60),
+                ),
             ),
             tooltip=["x_data:N", "y_data:N", "Frequency:Q"],
-        ),
-        # X axis label
-        alt.Chart(detailed_df).mark_text(y=350).encode(text="Column 1:N"),
-        # Y axis label
-        alt.Chart(detailed_df).mark_text(x=-50, angle=270).encode(text="Column 2:N"),
-    ).transform_filter(click & (alt.datum.comparison_type == "cat-cat"))
+        )
+        .transform_filter(click & (alt.datum.comparison_type == "cat-cat"))
+    )
+
+    labels_x = (
+        alt.Chart(detailed_df)
+        .mark_text(x=235, align="center")
+        .encode(text="Column 1:N")
+        .transform_filter(click)
+    )
+    labels_y = (
+        alt.Chart(detailed_df)
+        .mark_text(y=150, angle=270)
+        .encode(text="Column 2:N")
+        .transform_filter(click)
+    )
 
     # Layer charts together
-    detail_charts = (
+    detail_charts = alt.hconcat(
+        labels_y,
         alt.layer(empty, scatter_plot, box_plot_horizontal, box_plot_vertical, heatmap)
         .resolve_scale(x="shared", y="shared", color="independent")
         .resolve_legend(color="independent")
-        .properties(width=300, height=300)
+        .properties(width=300, height=300),
     )
 
-    return alt.vconcat(base, detail_charts).properties(
-        padding={"left": 20, "right": 20, "top": 20, "bottom": 75}
+    return alt.vconcat(base, detail_charts, labels_x).properties(
+        padding={"left": 20, "right": 20, "top": 20, "bottom": 200}
+    )
+
+
+def reformat_data(heatmap_df: pl.DataFrame, all_data: pl.DataFrame):
+    detail_df = pl.DataFrame(
+        {
+            "Column 1": pl.Series("Column 1", [], dtype=pl.String),
+            "Column 2": pl.Series("Column 2", [], dtype=pl.String),
+            "comparison_type": pl.Series("comparison_type", [], dtype=pl.String),
+            "x_data": pl.Series("x_data", [], dtype=pl.Object),
+            "y_data": pl.Series("y_data", [], dtype=pl.Object),
+        }
+    )
+
+    for row in heatmap_df.iter_rows():
+        cat1_data = all_data.get_column(row[0])
+        cat2_data = all_data.get_column(row[1])
+        for i in range(15):
+            if cat1_data[i] is not None and cat2_data[i] is not None:
+                if row[0] == row[1]:
+                    detail_df = pl.concat(
+                        [
+                            detail_df,
+                            pl.DataFrame(
+                                {
+                                    "Column 1": [row[0]],
+                                    "Column 2": [row[1]],
+                                    "comparison_type": ["same-same"],
+                                    "x_data": [None],
+                                    "y_data": [None],
+                                }
+                            ),
+                        ],
+                        how="vertical_relaxed",
+                    )
+                else:
+                    comparison_type = ""
+                    if cat1_data.dtype == pl.String:
+                        comparison_type = "cat-" + comparison_type
+                    elif cat1_data.dtype == pl.Int64 or cat1_data.dtype == pl.Float64:
+                        comparison_type = "num-" + comparison_type
+
+                    if cat2_data.dtype == pl.String:
+                        comparison_type += "cat"
+                    elif cat2_data.dtype == pl.Int64 or cat1_data.dtype == pl.Float64:
+                        comparison_type += "num"
+
+                    detail_df = pl.concat(
+                        [
+                            detail_df,
+                            pl.DataFrame(
+                                {
+                                    "Column 1": [row[0]],
+                                    "Column 2": [row[1]],
+                                    "comparison_type": [comparison_type],
+                                    "x_data": [cat1_data[i]],
+                                    "y_data": [cat2_data[i]],
+                                }
+                            ),
+                        ],
+                        how="vertical_relaxed",
+                    )
+
+    return (
+        heatmap_df.with_columns(
+            pl.when(pl.col("Column 1") == pl.col("Column 2"))
+            .then(pl.lit(0.0))  # New age for Bob
+            .otherwise(pl.col("Score"))
+            .alias("Score")
+        ),
+        detail_df,
     )
