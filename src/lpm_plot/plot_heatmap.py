@@ -22,6 +22,10 @@ def plot_heatmap(
         while "Score" provides quantitative values for coloring the heatmap.
     detailed_df : pl.DataFrame, optional
         A Polars DataFrame containing more detailed data about the data in df that is displayed when clicking heatmap cells.
+        It should have columns "Column 1", "Column 2", "comparison_type", "x_data", and "y_data". "Column 1" and "Column 2"
+        represent which 2 data classes are being compared and "comparison_tpye" determines which graph is used to show
+        the comparison and can be "num-num", "num-cat", "cat-num", "cat-cat", and "same-same". "x_data" and "y_data" are the
+        data being shown in the comparison referring to "Column 1" and "Column 2" respectively.
     cmap_main : str, optional
         Color scheme name for the main heatmap. Defaults to "greens".
     cmap_detail : str, optional
@@ -69,6 +73,7 @@ def plot_heatmap(
         fields=["Column 1", "Column 2"],
         on="click",
         value=[{"Column 1": None}, {"Column 2": None}],
+        clear=False,
     )
 
     # Create the heatmap using Altair
@@ -104,6 +109,7 @@ def plot_heatmap(
 
     cat_cat_df = detailed_df.filter(pl.col("comparison_type") == "cat-cat")
 
+    # Get frequency counts for all categorical-categorical data
     counted_df = (
         cat_cat_df.group_by(
             ["Column 1", "Column 2", "comparison_type", "x_data", "y_data"]
@@ -112,6 +118,7 @@ def plot_heatmap(
         .rename({"len": "Frequency"})
     )
 
+    # Get all present unique category combo for each cat-cat comparison
     column_combos = cat_cat_df["Column 1", "Column 2"].unique()
     combo_filtered_dfs: list[pl.DataFrame] = []
     for combo in column_combos.iter_rows():
@@ -121,6 +128,7 @@ def plot_heatmap(
             ).unique(subset=["x_data", "y_data"])
         )
 
+    # Add missing category combos with a frequency of 0
     for combo_filered_df in combo_filtered_dfs:
         combos = combo_filered_df["x_data", "y_data"].rows()
         x_vals = combo_filered_df["x_data"].unique()
@@ -135,15 +143,18 @@ def plot_heatmap(
                             orient="row",
                         )
                     )
+
+    # Replace detail_df cat-cat comparisons with counted versions
     detailed_df = (
         detailed_df.filter(pl.col("comparison_type") != "cat-cat")
         .with_columns(pl.lit(0, dtype=pl.UInt32).alias("Frequency"))
         .vstack(counted_df)
     )
 
+    # Empty graph that is displayed when data is compared to itself
     empty = (
         alt.Chart(detailed_df)
-        .mark_text(text="No data")
+        .mark_text(text="No Data: self comparison")
         .transform_filter(click & (alt.datum.comparison_type == "same-same"))
     )
 
@@ -196,7 +207,7 @@ def plot_heatmap(
     # Heat map when the data compared are both categorical
     heatmap = (
         alt.Chart(detailed_df)
-        .mark_rect()
+        .mark_rect(stroke="white")
         .encode(
             x=alt.X("x_data:N", title=None, axis=alt.Axis(orient="bottom")),
             y=alt.Y("y_data:N", title=None, axis=alt.Axis(orient="left")),
@@ -214,12 +225,14 @@ def plot_heatmap(
         .transform_filter(click & (alt.datum.comparison_type == "cat-cat"))
     )
 
+    # X axis labels
     labels_x = (
         alt.Chart(detailed_df)
         .mark_text(x=235, align="center")
         .encode(text="Column 1:N")
         .transform_filter(click)
     )
+    # Y axis label
     labels_y = (
         alt.Chart(detailed_df)
         .mark_text(y=150, angle=270)
@@ -241,7 +254,38 @@ def plot_heatmap(
     )
 
 
-def reformat_data(heatmap_df: pl.DataFrame, all_data: pl.DataFrame):
+def reformat_data(
+    heatmap_df: pl.DataFrame, all_data: pl.DataFrame, data_margin: float = 1.0
+):
+    """
+    Reformats the provided polars data frame so they can be used by the plot_heatmap function
+
+    Parameters
+    ----------
+    heatmap_df : pl.DataFrame
+        A Polars DataFrame containing the data to be plotted, with columns "Column 1", "Column 2", and "Score".
+        "Column 1" and "Column 2" represent categorical labels along the x- and y-axes, respectively,
+        while "Score" provides quantitative values for coloring the heatmap.
+    all_data : pl.DataFrame
+        A Polars DataFrame containing more detailed data about the data used to make the heatmap. Columns are specific data classes
+        and each row should represent all the data about specific sample.
+    data_margin : float, optional
+        Ratio all_data that should be reformatted from 0-1
+
+    Returns
+    -------
+    tuple[pl.DataFrame, pl.DataFrame]
+        Returns a tuple containing the reformatted heatmap and all_data data frames
+
+    Notes
+    -----
+    - For the heatmap dataframe the only change is replace the missing value for score in the case of matching column values
+    - all_data is reformatted to have "Column 1", "Column 2", "comparison_type", "x_data", and "y_data". "Column 1" and "Column 2"
+      represent which 2 data classes are being compared and "comparison_tpye" determines which graph is used to show
+      the comparison and can be "num-num", "num-cat", "cat-num", "cat-cat", and "same-same". "x_data" and "y_data" are the
+      data being shown in the comparison referring to "Column 1" and "Column 2" respectively.
+    """
+    # Create df that will become the return resilt for all_data
     detail_df = pl.DataFrame(
         {
             "Column 1": pl.Series("Column 1", [], dtype=pl.String),
@@ -252,28 +296,36 @@ def reformat_data(heatmap_df: pl.DataFrame, all_data: pl.DataFrame):
         }
     )
 
+    # Get margin of all_data to be used
+    data_slice = int(len(all_data) * data_margin)
+    all_data = all_data[:data_slice]
+
     for row in heatmap_df.iter_rows():
+        # Iterate through every column combo and get data pertaining to it
         cat1_data = all_data.get_column(row[0])
         cat2_data = all_data.get_column(row[1])
-        for i in range(15):
-            if cat1_data[i] is not None and cat2_data[i] is not None:
-                if row[0] == row[1]:
-                    detail_df = pl.concat(
-                        [
-                            detail_df,
-                            pl.DataFrame(
-                                {
-                                    "Column 1": [row[0]],
-                                    "Column 2": [row[1]],
-                                    "comparison_type": ["same-same"],
-                                    "x_data": [None],
-                                    "y_data": [None],
-                                }
-                            ),
-                        ],
-                        how="vertical_relaxed",
-                    )
-                else:
+
+        # Handle if the combo is a self comparison
+        if row[0] == row[1]:
+            detail_df = pl.concat(
+                [
+                    detail_df,
+                    pl.DataFrame(
+                        {
+                            "Column 1": [row[0]],
+                            "Column 2": [row[1]],
+                            "comparison_type": ["same-same"],
+                            "x_data": [None],
+                            "y_data": [None],
+                        }
+                    ),
+                ],
+                how="vertical_relaxed",
+            )
+        else:
+            for i in range(len(all_data)):
+                if cat1_data[i] is not None and cat2_data[i] is not None:
+                    # Determine the comparison type
                     comparison_type = ""
                     if cat1_data.dtype == pl.String:
                         comparison_type = "cat-" + comparison_type
@@ -285,6 +337,7 @@ def reformat_data(heatmap_df: pl.DataFrame, all_data: pl.DataFrame):
                     elif cat2_data.dtype == pl.Int64 or cat1_data.dtype == pl.Float64:
                         comparison_type += "num"
 
+                    # Add the data to the resulting data frame
                     detail_df = pl.concat(
                         [
                             detail_df,
@@ -302,9 +355,10 @@ def reformat_data(heatmap_df: pl.DataFrame, all_data: pl.DataFrame):
                     )
 
     return (
+        # Make all self-comparisons have a score of 0 in heatmap_df
         heatmap_df.with_columns(
             pl.when(pl.col("Column 1") == pl.col("Column 2"))
-            .then(pl.lit(0.0))  # New age for Bob
+            .then(pl.lit(0.0))
             .otherwise(pl.col("Score"))
             .alias("Score")
         ),
