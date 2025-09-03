@@ -47,6 +47,10 @@ def plot_heatmap(
     - Hierarchical clustering is performed on the data to define the optimal ordering of rows and columns
       for visualization, providing clearer patterns in the heatmap.
     - The generated Altair Chart includes tooltips for "Column 1", "Column 2", and "Score" for interactive exploration.
+    - For numerical vs categorical comparisons in the detail graph, the number ticks appear on the opposite sides to avoid conflicting with
+      other graph labels. These number ticks show as a single 0 on other graphs which is why they are moved to the opposite
+      side to avoid overlaps. This is an unavoidable consequence of making an interactive vega-lite graphs like this.
+    - The detail graph has a frequency bar that is unable to be hidden while non-heatmap graphs are displayed due to the limitations of vega-lite
     """
     assert "Column 1" in df.columns
     assert "Column 2" in df.columns
@@ -107,6 +111,18 @@ def plot_heatmap(
     if detailed_df is None:
         return base
 
+    detailed_df = detailed_df.vstack(
+        pl.DataFrame(
+            {
+                "Column 1": None,
+                "Column 2": None,
+                "comparison_type": "none",
+                "x_data": None,
+                "y_data": None,
+            }
+        )
+    )
+
     cat_cat_df = detailed_df.filter(pl.col("comparison_type") == "cat-cat")
 
     # Get frequency counts for all categorical-categorical data
@@ -154,8 +170,14 @@ def plot_heatmap(
     # Empty graph that is displayed when data is compared to itself
     empty = (
         alt.Chart(detailed_df)
-        .mark_text(text="No Data: self comparison")
+        .mark_text(text="No Data: self comparison", strokeWidth=0.5)
         .transform_filter(click & (alt.datum.comparison_type == "same-same"))
+    )
+    # Empty graph that is displayed when nothing is selected at the start
+    empty2 = (
+        alt.Chart(detailed_df)
+        .mark_text(text="Nothing selected", strokeWidth=0.5)
+        .transform_filter(click & (alt.datum.comparison_type == "none"))
     )
 
     # Scatter plot when the data compared are both numerical
@@ -228,14 +250,14 @@ def plot_heatmap(
     # X axis labels
     labels_x = (
         alt.Chart(detailed_df)
-        .mark_text(x=235, align="center")
+        .mark_text(x=235, align="center", strokeWidth=0.5)
         .encode(text="Column 1:N")
         .transform_filter(click)
     )
     # Y axis label
     labels_y = (
         alt.Chart(detailed_df)
-        .mark_text(y=150, angle=270)
+        .mark_text(y=150, angle=270, strokeWidth=0.5)
         .encode(text="Column 2:N")
         .transform_filter(click)
     )
@@ -243,7 +265,14 @@ def plot_heatmap(
     # Layer charts together
     detail_charts = alt.hconcat(
         labels_y,
-        alt.layer(empty, scatter_plot, box_plot_horizontal, box_plot_vertical, heatmap)
+        alt.layer(
+            empty,
+            empty2,
+            scatter_plot,
+            box_plot_horizontal,
+            box_plot_vertical,
+            heatmap,
+        )
         .resolve_scale(x="shared", y="shared", color="independent")
         .resolve_legend(color="independent")
         .properties(width=300, height=300),

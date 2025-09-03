@@ -203,25 +203,32 @@ def plot_marginal_numerical_numerical(
         if y_domain[1] is None
         else y_domain[1],
     ]
-    # Chart for observed data
-    chart1 = (
-        alt.Chart(observed_df)
+
+    # Make a combined data frame with a new dataset column specifying if the data is observed or synthetic
+    observed_df_labeled = observed_df.with_columns(pl.lit("Observed").alias("dataset"))
+    synthetic_df_labeled = synthetic_df.with_columns(
+        pl.lit("Synthetic").alias("dataset")
+    )
+    combined_df = pl.concat([observed_df_labeled, synthetic_df_labeled], how="vertical")
+
+    chart = (
+        alt.Chart(combined_df)
         .mark_circle(color=OBSERVED_COLOR)
         .encode(
             x=alt.X(x, scale=alt.Scale(domain=x_domain)),
             y=alt.Y(y, scale=alt.Scale(domain=y_domain)),
+            color=alt.Color(
+                "dataset:N",
+                scale=alt.Scale(
+                    domain=["Observed", "Synthetic"],
+                    range=[OBSERVED_COLOR, SYNTHETIC_COLOR],
+                ),
+                legend=alt.Legend(title="Legend", symbolStrokeWidth=4),
+            ),
         )
     )
-    # Chart for synthetic data
-    chart2 = (
-        alt.Chart(synthetic_df)
-        .mark_circle(color=SYNTHETIC_COLOR)
-        .encode(
-            x=alt.X(x, scale=alt.Scale(domain=x_domain)),
-            y=alt.Y(y, scale=alt.Scale(domain=y_domain)),
-        )
-    )
-    return chart1 + chart2
+
+    return chart
 
 
 def plot_marginal_numerical_categorical(
