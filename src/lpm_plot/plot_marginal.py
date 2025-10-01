@@ -8,18 +8,18 @@ alt.data_transformers.enable("vegafusion")
 
 
 def get_max_frequency(column, data):
-    # Group by `data_source` and the given `column`, then count occurrences
+    "Calculate the maximum frequency value for a given column. This is used to align the axes of the comparison plots."
     result = (
         data.group_by(["data_source", column])
-        .agg(pl.count(column).alias("count"))  # Count occurrences of each value
+        .agg(pl.count(column).alias("count"))
         .group_by("data_source")
-        .agg(pl.max("count").alias("max_count"))  # Get max count for each data_source
+        .agg(pl.max("count").alias("max_count"))
     )
-    # Return the max of the max counts
     return result.select(pl.max("max_count")).item()
 
 
 def plot_marginal_1d(observed_df, synthetic_df, columns):
+    "Plot 1D marginal plots for a given list of columns."
     assert len(columns) > 0.0
     for c in columns:
         assert c in observed_df.columns, "column not in observed data"
@@ -34,11 +34,11 @@ def plot_marginal_1d(observed_df, synthetic_df, columns):
 
     data = pl.concat([observed_df, synthetic_df])
 
-    # XXX: horrible hack; but Altair doesn't allow me to add a custom legend.
+    # Issue: Altair doesn't allow me to add a custom legend, using this dummy data workaround.
     dummy_data_for_legend = pl.DataFrame(
         {
             "category": ["Observed", "Synthetic"],
-            "dummy": [0, 0],  # Dummy column to avoid visible marks
+            "dummy": [0, 0],
         }
     ).to_pandas()
 
@@ -74,12 +74,12 @@ def plot_marginal_1d(observed_df, synthetic_df, columns):
                         titleAnchor="start",
                         titleAlign="right",
                         titlePadding=1,
-                        titleAngle=0,  # Rotate the y-axis label by 90 degrees (change as needed)
+                        titleAngle=0,
                     ),
                 ),
                 color=alt.value(color),
             )
-            .transform_filter(f"datum.{field} != null")  # Filter out null values
+            .transform_filter(f"datum.{field} != null")
         )
 
     # Creating the charts for observed and synthetic collections
@@ -94,7 +94,6 @@ def plot_marginal_1d(observed_df, synthetic_df, columns):
         return alt.hconcat(chart_observed, chart_synthetic)
 
     one_d_plots = [create_comparison(column, data) for column in columns]
-    # Layer the charts for observed and synthetic data points
     combined_chart = (
         alt.vconcat(*one_d_plots, legend)
         .resolve_scale(color="independent")
@@ -103,9 +102,51 @@ def plot_marginal_1d(observed_df, synthetic_df, columns):
     return combined_chart
 
 
+def prepare_2d_marginal_data(observed_df, synthetic_df, x, y):
+    """
+    Prepare data for 2D marginal plotting by calculating normalized frequencies.
+
+    Args:
+        observed_df (pl.DataFrame): Observed data
+        synthetic_df (pl.DataFrame): Synthetic data
+        x (str): First categorical column name
+        y (str): Second categorical column name
+
+    Returns:
+        pl.DataFrame: Combined dataframe with Source and Normalized frequency columns
+    """
+    # Ensure both dataframes have the same column order
+    columns = [x, y]
+    observed_subset = observed_df.select(columns)
+    synthetic_subset = synthetic_df.select(columns)
+
+    observed_labeled = observed_subset.with_columns(pl.lit("Observed").alias("Source"))
+    synthetic_labeled = synthetic_subset.with_columns(
+        pl.lit("Synthetic").alias("Source")
+    )
+
+    combined = pl.concat([observed_labeled, synthetic_labeled])
+
+    freq_data = combined.group_by(["Source", x, y]).agg(pl.count().alias("count"))
+
+    total_counts = freq_data.group_by("Source").agg(
+        pl.sum("count").alias("total_count")
+    )
+
+    result = (
+        freq_data.join(total_counts, on="Source")
+        .with_columns(
+            (pl.col("count") / pl.col("total_count")).alias("Normalized frequency")
+        )
+        .drop("total_count")
+    )
+
+    return result
+
+
 def plot_marginal_2d(combined_df, x, y, hm_order=None, cmap="oranges"):
     """
-    Plots 2D marginal heatmaps of normalized frequencies for categorical variables across multiple sources.
+    Plots 2D marginal heatmaps of normalized frequencies to compare relationships between categorical variables in different dataset sources (e.g. observed and synthetic).
 
     This function generates a series of 2D heatmaps (one per data source) that visualize the bivariate
     frequencies of two categorical variables (`x` and `y`). The heatmaps are displayed side by side, sharing
@@ -115,7 +156,7 @@ def plot_marginal_2d(combined_df, x, y, hm_order=None, cmap="oranges"):
     Args:
         combined_df (pl.DataFrame): A Polars DataFrame containing the combined data from different sources.
             It must contain the columns specified by `x`, `y`, and a "Source" column, as well as a
-            "Normalized frequency" column with the frequencies.
+            "Normalized frequency" column with the normalized frequencies pre-calculated (can use prepare_2d_marginal_data for this).
         x (str): The name of the first categorical column (horizontal axis of the heatmap).
         y (str): The name of the second categorical column (vertical axis of the heatmap).
         hm_order (list of str, optional): A custom order for the sources for the plot.
@@ -148,10 +189,7 @@ def plot_marginal_2d(combined_df, x, y, hm_order=None, cmap="oranges"):
         base.transform_filter(alt.datum.Source == source).properties(title=source)
         for source in order
     ]
-    # Concatenate the heatmaps horizontally and ensure they share the color scale
-    combined_heatmap = alt.hconcat(*heatmaps).resolve_scale(
-        color="shared"  # Share the color scale between the heatmaps
-    )
+    combined_heatmap = alt.hconcat(*heatmaps).resolve_scale(color="shared")
     return combined_heatmap
 
 
@@ -165,7 +203,7 @@ def plot_marginal_numerical_numerical(
 ):
     """
     Plots 2D marginal scatter plot comparing numerical observed and synthetic data
-    which are displayed black and orange respectively
+    which are displayed black and orange respectively.
 
     Args:
         observed_df : pl.DataFrame
@@ -186,7 +224,6 @@ def plot_marginal_numerical_numerical(
     Returns:
         alt.Chart: An Altair chart object containing the scatter plot.
     """
-    # Calculate domains if no domains are provided
     x_domain = [
         min(observed_df[x].min(), synthetic_df[x].min())
         if x_domain[0] is None
@@ -241,7 +278,7 @@ def plot_marginal_numerical_categorical(
 ):
     """
     Plots 2D marginal box plot comparing numerical vs categorical observed and synthetic data
-    which are displayed black and orange respectively
+    which are displayed black and orange respectively.
 
     Args:
         observed_df : pl.DataFrame
@@ -274,7 +311,6 @@ def plot_marginal_numerical_categorical(
 
     combined_df = pl.concat([observed_df_labeled, synthetic_df_labeled])
 
-    # Calculate y_domain if no domain is provided
     y_domain = [
         combined_df[y].min() if y_domain[0] is None else y_domain[0],
         combined_df[y].max() if y_domain[1] is None else y_domain[1],
@@ -286,7 +322,6 @@ def plot_marginal_numerical_categorical(
         .encode(
             x=alt.X(f"{x}:N", scale=alt.Scale(padding=0.5)),
             y=alt.Y(f"{y}:Q", scale=alt.Scale(domain=y_domain)),
-            # Give the box different color based on which dataset it was from
             color=alt.Color(
                 "dataset:N",
                 scale=alt.Scale(
@@ -296,7 +331,6 @@ def plot_marginal_numerical_categorical(
             ),
             xOffset=alt.XOffset(
                 "dataset:N",
-                # Shift the box to the left or righ based on which dataset it was from
                 scale=alt.Scale(
                     domain=["Observed", "Synthetic"],
                     range=[-size, size],

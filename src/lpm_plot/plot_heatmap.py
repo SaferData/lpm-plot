@@ -10,6 +10,7 @@ def plot_heatmap(
     cmap_main: str = "greens",
     cmap_detail: str = "greys",
     detail_color: str = "black",
+    interactive: bool = True,
 ):
     """
     Generates a clustered heatmap using hierarchical clustering on a Polars DataFrame and visualizes it with Altair.
@@ -17,21 +18,26 @@ def plot_heatmap(
     Parameters
     ----------
     df : pl.DataFrame
-        A Polars DataFrame containing the data to be plotted, with columns "Column 1", "Column 2", and "Score".
+        A Polars DataFrame with columns named "Column 1", "Column 2", and "Score."
         "Column 1" and "Column 2" represent categorical labels along the x- and y-axes, respectively,
-        while "Score" provides quantitative values for coloring the heatmap.
+        while "Score" provides numerical values for coloring the heatmap.
     detailed_df : pl.DataFrame, optional
-        A Polars DataFrame containing more detailed data about the data in df that is displayed when clicking heatmap cells.
-        It should have columns "Column 1", "Column 2", "comparison_type", "x_data", and "y_data". "Column 1" and "Column 2"
-        represent which 2 data classes are being compared and "comparison_tpye" determines which graph is used to show
-        the comparison and can be "num-num", "num-cat", "cat-num", "cat-cat", and "same-same". "x_data" and "y_data" are the
-        data being shown in the comparison referring to "Column 1" and "Column 2" respectively.
+        A Polars DataFrame containing more detailed information about the additional graph displayed after clicking specific heatmap cells.
+        The detailed_df has the following columns:
+        - "Column 1": Data class 1
+        - "Column 2": Data class 2
+        - "comparison_type": Specifies the graph type used to compare the two classes and can take the values "num-num", "num-cat", "cat-num", "cat-cat", and "same-same"
+        - "x_data": Data for the x-axis
+        - "y_data": Data for the y-axis
     cmap_main : str, optional
-        Color scheme name for the main heatmap. Defaults to "greens".
+        Color scheme name for the mutual information heatmap. Defaults to "greens".
     cmap_detail : str, optional
         Color scheme name for the detail heatmap. Defaults to "greys".
     detail_color : str, optional
         Color for detail scatter and box plots. Defaults to "black".
+    interactive : bool, optional
+        Whether to make the plot interactive. When True, enables zooming, panning, and a detailed 2D subplot of the selected heatmap cell.
+        Defaults to True.
 
     Returns
     -------
@@ -40,14 +46,14 @@ def plot_heatmap(
 
     Notes
     -----
-    - The function first converts the Polars DataFrame to a pandas DataFrame to support operations required
-      for hierarchical clustering and plotting with Altair.
-    - A square matrix (pivot table) is created with "Column 1" and "Column 2" as indices, containing "Score"
+    1) Converts the Polars DataFrame to a pandas DataFrame to support operations required for hierarchical clustering and plotting with Altair.
+    2) Creates a square matrix (pivot table) with "Column 1" and "Column 2" as indices, containing "Score"
       as values.
-    - Hierarchical clustering is performed on the data to define the optimal ordering of rows and columns
-      for visualization, providing clearer patterns in the heatmap.
-    - The generated Altair Chart includes tooltips for "Column 1", "Column 2", and "Score" for interactive exploration.
-    - For numerical vs categorical comparisons in the detail graph, the number ticks appear on the opposite sides to avoid conflicting with
+    3) Performs hierarchical clustering on the data to define the optimal ordering of rows and columns for visualization, providing clearer patterns in the heatmap.
+    4) The generated Altair Chart includes tooltips for "Column 1", "Column 2", and "Score" for interactive exploration.
+
+
+    - Current limitations: For numerical vs categorical comparisons in the detail graph, the number ticks appear on the opposite sides to avoid conflicting with
       other graph labels. These number ticks show as a single 0 on other graphs which is why they are moved to the opposite
       side to avoid overlaps. This is an unavoidable consequence of making an interactive vega-lite graphs like this.
     - The detail graph has a frequency bar that is unable to be hidden while non-heatmap graphs are displayed due to the limitations of vega-lite
@@ -72,44 +78,55 @@ def plot_heatmap(
     # Get the order of the rows/columns after clustering
     order = [df_pivot.index[i] for i in leaves_list(linkage_matrix)]
 
-    # Define filter fields for selected cells
-    click = alt.selection_point(
-        fields=["Column 1", "Column 2"],
-        on="click",
-        value=[{"Column 1": None}, {"Column 2": None}],
-        clear=False,
-    )
+    # Define filter fields for selected cells (only if interactive)
+    if interactive:
+        click = alt.selection_point(
+            fields=["Column 1", "Column 2"],
+            on="click",
+            value=[{"Column 1": None}, {"Column 2": None}],
+            clear=False,
+        )
+    else:
+        click = None
 
     # Create the heatmap using Altair
-    base = (
-        alt.Chart(df_pandas)
-        .mark_rect()
-        .add_params(click)
-        .encode(
-            x=alt.X(
-                "Column 1:N",
-                title="Column 1",
-                sort=order,  # Replace with your desired order
+    base = alt.Chart(df_pandas).mark_rect()
+
+    # Add click parameter only if interactive
+    if click is not None:
+        base = base.add_params(click)
+
+    base = base.encode(
+        x=alt.X(
+            "Column 1:N",
+            title="Column 1",
+            sort=order,  # Replace with your desired order
+        ),
+        y=alt.Y(
+            "Column 2:N",
+            title="Column 2",
+            sort=order,  # Replace with your desired order
+        ),
+        color=alt.condition(
+            alt.datum.Score == 0,
+            alt.value("white"),
+            alt.Color(
+                "Score:Q", scale=alt.Scale(scheme=cmap_main), legend=alt.Legend()
             ),
-            y=alt.Y(
-                "Column 2:N",
-                title="Column 2",
-                sort=order,  # Replace with your desired order
-            ),
-            color=alt.condition(
-                alt.datum.Score == 0,
-                alt.value("white"),
-                alt.Color(
-                    "Score:Q", scale=alt.Scale(scheme=cmap_main), legend=alt.Legend()
-                ),
-            ),
-            tooltip=["Column 1", "Column 2", "Score:Q"],
-        )  # Default scale
-    )
+        ),
+        tooltip=["Column 1", "Column 2", "Score:Q"],
+    ).properties(width=400, height=400)  # Default scale
 
     # Return heatmap if no detailed data is provided
     if detailed_df is None:
-        return base
+        if interactive:
+            return base.interactive()
+        else:
+            return base.properties(title="Mutual Information Heatmap")
+
+    # If not interactive, return just the base heatmap even if detailed_df is provided
+    if not interactive:
+        return base.properties(title="Mutual Information Heatmap")
 
     detailed_df = detailed_df.vstack(
         pl.DataFrame(
@@ -168,17 +185,18 @@ def plot_heatmap(
     )
 
     # Empty graph that is displayed when data is compared to itself
-    empty = (
-        alt.Chart(detailed_df)
-        .mark_text(text="No Data: self comparison", strokeWidth=0.5)
-        .transform_filter(click & (alt.datum.comparison_type == "same-same"))
+    empty = alt.Chart(detailed_df).mark_text(
+        text="No Data: self comparison", strokeWidth=0.5
     )
+    if click is not None:
+        empty = empty.transform_filter(
+            click & (alt.datum.comparison_type == "same-same")
+        )
+
     # Empty graph that is displayed when nothing is selected at the start
-    empty2 = (
-        alt.Chart(detailed_df)
-        .mark_text(text="Nothing selected", strokeWidth=0.5)
-        .transform_filter(click & (alt.datum.comparison_type == "none"))
-    )
+    empty2 = alt.Chart(detailed_df).mark_text(text="Nothing selected", strokeWidth=0.5)
+    if click is not None:
+        empty2 = empty2.transform_filter(click & (alt.datum.comparison_type == "none"))
 
     # Scatter plot when the data compared are both numerical
     scatter_plot = (
@@ -189,8 +207,11 @@ def plot_heatmap(
             y=alt.Y("y_data:Q", title=None, axis=alt.Axis(orient="left")),
             tooltip=["x_data:Q", "y_data:Q"],
         )
-        .transform_filter(click & (alt.datum.comparison_type == "num-num"))
     )
+    if click is not None:
+        scatter_plot = scatter_plot.transform_filter(
+            click & (alt.datum.comparison_type == "num-num")
+        )
 
     # Box plot when the data compared is numerical and categorical
     box_plot_horizontal = (
@@ -206,8 +227,11 @@ def plot_heatmap(
             ),
             tooltip=["x_data:N", "y_data:Q"],
         )
-        .transform_filter(click & (alt.datum.comparison_type == "num-cat"))
     )
+    if click is not None:
+        box_plot_horizontal = box_plot_horizontal.transform_filter(
+            click & (alt.datum.comparison_type == "num-cat")
+        )
 
     # Box plot when the data compared is categorical and numerical
     box_plot_vertical = (
@@ -223,8 +247,11 @@ def plot_heatmap(
             y=alt.Y("y_data:Q", title=None, axis=alt.Axis(orient="right")),
             tooltip=["x_data:N", "y_data:Q"],
         )
-        .transform_filter(click & (alt.datum.comparison_type == "cat-num"))
     )
+    if click is not None:
+        box_plot_vertical = box_plot_vertical.transform_filter(
+            click & (alt.datum.comparison_type == "cat-num")
+        )
 
     # Heat map when the data compared are both categorical
     heatmap = (
@@ -239,32 +266,46 @@ def plot_heatmap(
                 alt.Color(
                     "Frequency:Q",
                     scale=alt.Scale(scheme=cmap_detail, domainMin=0),
-                    legend=alt.Legend(offset=60),
+                    legend=alt.Legend(orient="right", offset=10),
                 ),
             ),
             tooltip=["x_data:N", "y_data:N", "Frequency:Q"],
         )
-        .transform_filter(click & (alt.datum.comparison_type == "cat-cat"))
     )
+    if click is not None:
+        heatmap = heatmap.transform_filter(
+            click & (alt.datum.comparison_type == "cat-cat")
+        )
 
-    # X axis labels
+    # X axis labels - positioned to align with the detail chart
     labels_x = (
         alt.Chart(detailed_df)
-        .mark_text(x=235, align="center", strokeWidth=0.5)
-        .encode(text="Column 1:N")
-        .transform_filter(click)
+        .mark_text(align="center", strokeWidth=0.5, fontSize=12)
+        .encode(
+            text="Column 1:N",
+            x=alt.value(205),  # Center of the 350px wide detail chart (30 + 175)
+            y=alt.value(15),  # Below the detail chart
+        )
     )
-    # Y axis label
+    if click is not None:
+        labels_x = labels_x.transform_filter(click)
+
+    # Y axis label - positioned to align with the detail chart
     labels_y = (
         alt.Chart(detailed_df)
-        .mark_text(y=150, angle=270, strokeWidth=0.5)
-        .encode(text="Column 2:N")
-        .transform_filter(click)
+        .mark_text(angle=270, strokeWidth=0.5, fontSize=12)
+        .encode(
+            text="Column 2:N",
+            x=alt.value(15),  # Left of the detail chart
+            y=alt.value(150),  # Center of the 300px high detail chart
+        )
     )
+    if click is not None:
+        labels_y = labels_y.transform_filter(click)
 
     # Layer charts together
     detail_charts = alt.hconcat(
-        labels_y,
+        labels_y.properties(width=30),  # Narrow space for Y labels
         alt.layer(
             empty,
             empty2,
@@ -275,12 +316,22 @@ def plot_heatmap(
         )
         .resolve_scale(x="shared", y="shared", color="independent")
         .resolve_legend(color="independent")
-        .properties(width=300, height=300),
+        .properties(width=350, height=300),  # Increased width to accommodate legend
+        spacing=5,
     )
 
-    return alt.vconcat(base, detail_charts, labels_x).properties(
-        padding={"left": 20, "right": 20, "top": 20, "bottom": 200}
-    )
+    # Create the main layout with proper spacing
+    chart = alt.vconcat(
+        base.properties(title="Mutual Information Heatmap"),
+        detail_charts.properties(title="2D Detailed View (click on heatmap cells)"),
+        labels_x,
+    ).properties(padding={"left": 40, "right": 40, "top": 20, "bottom": 40}, spacing=20)
+
+    # Apply interactivity if requested
+    if interactive:
+        return chart.interactive()
+    else:
+        return chart
 
 
 def reformat_data(
