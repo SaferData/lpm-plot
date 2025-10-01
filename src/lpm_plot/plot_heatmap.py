@@ -115,7 +115,9 @@ def plot_heatmap(
             ),
         ),
         tooltip=["Column 1", "Column 2", "Score:Q"],
-    ).properties(width=400, height=400)  # Default scale
+    ).properties(
+        width=400, height=400
+    )  # Default scale
 
     # Return heatmap if no detailed data is provided
     if detailed_df is None:

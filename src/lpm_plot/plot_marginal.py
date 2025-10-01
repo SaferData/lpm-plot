@@ -225,20 +225,28 @@ def plot_marginal_numerical_numerical(
         alt.Chart: An Altair chart object containing the scatter plot.
     """
     x_domain = [
-        min(observed_df[x].min(), synthetic_df[x].min())
-        if x_domain[0] is None
-        else x_domain[0],
-        max(observed_df[x].max(), synthetic_df[x].max())
-        if x_domain[1] is None
-        else x_domain[1],
+        (
+            min(observed_df[x].min(), synthetic_df[x].min())
+            if x_domain[0] is None
+            else x_domain[0]
+        ),
+        (
+            max(observed_df[x].max(), synthetic_df[x].max())
+            if x_domain[1] is None
+            else x_domain[1]
+        ),
     ]
     y_domain = [
-        min(observed_df[y].min(), synthetic_df[y].min())
-        if y_domain[0] is None
-        else y_domain[0],
-        max(observed_df[y].max(), synthetic_df[y].max())
-        if y_domain[1] is None
-        else y_domain[1],
+        (
+            min(observed_df[y].min(), synthetic_df[y].min())
+            if y_domain[0] is None
+            else y_domain[0]
+        ),
+        (
+            max(observed_df[y].max(), synthetic_df[y].max())
+            if y_domain[1] is None
+            else y_domain[1]
+        ),
     ]
 
     # Make a combined data frame with a new dataset column specifying if the data is observed or synthetic
