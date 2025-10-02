@@ -19,14 +19,13 @@ dependencies = [
   "vegafusion-python-embed>=1.6.9",
   "vl-convert-python>=1.7.0",
   "scipy>=1.14.1",
-  "ruff>=0.13.2",
 ]
 
 [dependency-groups]
 dev = [
-  "black>=24.8.0",
   "jupyter>=1.1.1",
   "pytest>=8.3.3",
+  "ruff>=0.13.2",
 ]
 
 [build-system]
