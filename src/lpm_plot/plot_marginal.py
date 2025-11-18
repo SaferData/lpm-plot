@@ -40,7 +40,7 @@ def plot_marginal_1d(observed_df, synthetic_df, columns):
             "category": ["Observed", "Synthetic"],
             "dummy": [0, 0],
         }
-    ).to_pandas()
+    )
 
     # Create an empty plot with a legend and no visible marks
     legend = (
@@ -58,18 +58,41 @@ def plot_marginal_1d(observed_df, synthetic_df, columns):
         )
     )
 
-    def create_marginal_chart(field, color, max_count):
-        return (
-            alt.Chart(data.to_pandas())
-            .mark_bar(color=color)
+    # Creating the charts for observed and synthetic collections
+    def create_comparison(column, data):
+        max_count = get_max_frequency(column, data)
+
+        # Pre-aggregate data in Polars to avoid VegaFusion type casting issues
+        # Filter and aggregate observed data
+        observed_agg = (
+            data.filter(pl.col("data_source") == "observed")
+            .filter(pl.col(column).is_not_null())
+            .group_by(column)
+            .agg(pl.len().alias("count"))
+            .with_columns(pl.lit("observed").alias("data_source"))
+        )
+
+        # Filter and aggregate synthetic data
+        synthetic_agg = (
+            data.filter(pl.col("data_source") == "synthetic")
+            .filter(pl.col(column).is_not_null())
+            .group_by(column)
+            .agg(pl.len().alias("count"))
+            .with_columns(pl.lit("synthetic").alias("data_source"))
+        )
+
+        # Create charts with pre-aggregated data
+        chart_observed = (
+            alt.Chart(observed_agg)
+            .mark_bar(color=OBSERVED_COLOR)
             .encode(
                 x=alt.X(
-                    "count():Q",
+                    "count:Q",
                     scale=alt.Scale(domain=[0, max_count]),
                     axis=alt.Axis(orient="top"),
                 ),
                 y=alt.Y(
-                    f"{field}:N",
+                    f"{column}:N",
                     axis=alt.Axis(
                         titleAnchor="start",
                         titleAlign="right",
@@ -77,20 +100,33 @@ def plot_marginal_1d(observed_df, synthetic_df, columns):
                         titleAngle=0,
                     ),
                 ),
-                color=alt.value(color),
+                color=alt.value(OBSERVED_COLOR),
             )
-            .transform_filter(f"datum.{field} != null")
+            .properties(width=300, height=200)
         )
 
-    # Creating the charts for observed and synthetic collections
-    def create_comparison(column, data):
-        max_count = get_max_frequency(column, data)
-        chart_observed = create_marginal_chart(
-            column, OBSERVED_COLOR, max_count
-        ).transform_filter(alt.datum.data_source == "observed")
-        chart_synthetic = create_marginal_chart(
-            column, SYNTHETIC_COLOR, max_count
-        ).transform_filter(alt.datum.data_source == "synthetic")
+        chart_synthetic = (
+            alt.Chart(synthetic_agg)
+            .mark_bar(color=SYNTHETIC_COLOR)
+            .encode(
+                x=alt.X(
+                    "count:Q",
+                    scale=alt.Scale(domain=[0, max_count]),
+                    axis=alt.Axis(orient="top"),
+                ),
+                y=alt.Y(
+                    f"{column}:N",
+                    axis=alt.Axis(
+                        titleAnchor="start",
+                        titleAlign="right",
+                        titlePadding=1,
+                        titleAngle=0,
+                    ),
+                ),
+                color=alt.value(SYNTHETIC_COLOR),
+            )
+            .properties(width=300, height=200)
+        )
         return alt.hconcat(chart_observed, chart_synthetic)
 
     one_d_plots = [create_comparison(column, data) for column in columns]
@@ -127,16 +163,21 @@ def prepare_2d_marginal_data(observed_df, synthetic_df, x, y):
 
     combined = pl.concat([observed_labeled, synthetic_labeled])
 
-    freq_data = combined.group_by(["Source", x, y]).agg(pl.count().alias("count"))
+    freq_data = combined.group_by(["Source", x, y]).agg(
+        pl.count().cast(pl.Int64).alias("count")
+    )
 
     total_counts = freq_data.group_by("Source").agg(
-        pl.sum("count").alias("total_count")
+        pl.sum("count").cast(pl.Int64).alias("total_count")
     )
 
     result = (
         freq_data.join(total_counts, on="Source")
         .with_columns(
-            (pl.col("count") / pl.col("total_count")).alias("Normalized frequency")
+            (
+                pl.col("count").cast(pl.Float64)
+                / pl.col("total_count").cast(pl.Float64)
+            ).alias("Normalized frequency")
         )
         .drop("total_count")
     )
@@ -166,29 +207,33 @@ def plot_marginal_2d(combined_df, x, y, hm_order=None, cmap="oranges"):
     Returns:
         alt.Chart: An Altair chart object containing the concatenated heatmaps, one for each source.
     """
-    base = (
-        alt.Chart(combined_df.to_pandas())
-        .mark_rect()
-        .encode(
-            x=alt.X(f"{x}:N", title=f"{x}"),
-            y=alt.Y(f"{y}:N", title=f"{y}"),
-            color=alt.Color(
-                "Normalized frequency:Q",
-                scale=alt.Scale(scheme=cmap),
-                title="Normalized Count",
-            ),
-            tooltip=[x, y, "Normalized frequency:Q"],
-        )
-    )
     # Check if users wanted to order the datasources.
     if hm_order is None:
-        order = sorted(combined_df["Source"].unique())
+        order = sorted(combined_df["Source"].unique().to_list())
     else:
         order = hm_order
-    heatmaps = [
-        base.transform_filter(alt.datum.Source == source).properties(title=source)
-        for source in order
-    ]
+
+    # Pre-filter data in Polars for each source to avoid VegaFusion type casting issues
+    heatmaps = []
+    for source in order:
+        source_df = combined_df.filter(pl.col("Source") == source)
+        heatmap = (
+            alt.Chart(source_df)
+            .mark_rect()
+            .encode(
+                x=alt.X(f"{x}:N", title=f"{x}"),
+                y=alt.Y(f"{y}:N", title=f"{y}"),
+                color=alt.Color(
+                    "Normalized frequency:Q",
+                    scale=alt.Scale(scheme=cmap),
+                    title="Normalized Count",
+                ),
+                tooltip=[x, y, "Normalized frequency:Q"],
+            )
+            .properties(width=400, height=400, title=source)
+        )
+        heatmaps.append(heatmap)
+
     combined_heatmap = alt.hconcat(*heatmaps).resolve_scale(color="shared")
     return combined_heatmap
 
@@ -271,6 +316,7 @@ def plot_marginal_numerical_numerical(
                 legend=alt.Legend(title="Legend", symbolStrokeWidth=4),
             ),
         )
+        .properties(width=500, height=500)
     )
 
     return chart
@@ -345,5 +391,5 @@ def plot_marginal_numerical_categorical(
                 ),
             ),
         )
-        .properties(width=(size * 2 + 50) * combined_df[x].n_unique())
+        .properties(width=(size * 2 + 50) * combined_df[x].n_unique(), height=400)
     )

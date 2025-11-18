@@ -46,11 +46,10 @@ def plot_heatmap(
 
     Notes
     -----
-    1) Converts the Polars DataFrame to a pandas DataFrame to support operations required for hierarchical clustering and plotting with Altair.
-    2) Creates a square matrix (pivot table) with "Column 1" and "Column 2" as indices, containing "Score"
+    1) Creates a square matrix (pivot table) with "Column 1" and "Column 2" as indices, containing "Score"
       as values.
-    3) Performs hierarchical clustering on the data to define the optimal ordering of rows and columns for visualization, providing clearer patterns in the heatmap.
-    4) The generated Altair Chart includes tooltips for "Column 1", "Column 2", and "Score" for interactive exploration.
+    2) Performs hierarchical clustering on the data to define the optimal ordering of rows and columns for visualization, providing clearer patterns in the heatmap.
+    3) The generated Altair Chart includes tooltips for "Column 1", "Column 2", and "Score" for interactive exploration.
 
 
     - Current limitations: For numerical vs categorical comparisons in the detail graph, the number ticks appear on the opposite sides to avoid conflicting with
@@ -61,14 +60,53 @@ def plot_heatmap(
     assert "Column 1" in df.columns
     assert "Column 2" in df.columns
     assert "Score" in df.columns
-    # Convert the polars dataframe to pandas for clustering and plotting
-    df_pandas = df.to_pandas()
+
+    # Get all unique values from both columns to ensure square matrix
+    all_unique_values = sorted(
+        set(df["Column 1"].unique().to_list() + df["Column 2"].unique().to_list())
+    )
 
     # Pivot the data to create a square matrix for clustering
-    df_pivot = df_pandas.pivot(index="Column 1", columns="Column 2", values="Score")
+    df_pivot = df.pivot(
+        values="Score", index="Column 1", on="Column 2", aggregate_function="first"
+    )
+
+    # Get the row labels (Column 1 values) - ensure all unique values are present
+    row_labels = df_pivot["Column 1"].to_list()
+    # Ensure all rows are present (add missing rows with nulls)
+    missing_rows = set(all_unique_values) - set(row_labels)
+    if missing_rows:
+        missing_df = pl.DataFrame(
+            {
+                "Column 1": list(missing_rows),
+                **{
+                    col: [None] * len(missing_rows)
+                    for col in df_pivot.columns
+                    if col != "Column 1"
+                },
+            }
+        )
+        df_pivot = pl.concat([df_pivot, missing_df])
+        # Re-sort to match all_unique_values order
+        df_pivot = df_pivot.sort("Column 1")
+        row_labels = df_pivot["Column 1"].to_list()
+
+    # Get data columns (Column 2 values) - ensure all unique values are present as columns
+    data_columns = [col for col in df_pivot.columns if col != "Column 1"]
+    missing_cols = set(all_unique_values) - set(data_columns)
+    if missing_cols:
+        for col in missing_cols:
+            df_pivot = df_pivot.with_columns(pl.lit(None).alias(col))
+        # Reorder columns to match all_unique_values
+        df_pivot = df_pivot.select(["Column 1"] + all_unique_values)
+        data_columns = all_unique_values
+
+    # Extract the data matrix (excluding the "Column 1" column) and convert to numpy
+    data_matrix = df_pivot.select(data_columns).fill_null(0).to_numpy()
+
     # Create a condensed distance matrix from the pivoted matrix
-    distance_matrix = 1 - df_pivot
-    condensed_matrix = distance_matrix.fillna(0).to_numpy()  # Handle NaNs
+    distance_matrix = 1 - data_matrix
+    condensed_matrix = distance_matrix  # Already a numpy array
 
     # Perform hierarchical clustering
     linkage_matrix = linkage(
@@ -76,7 +114,7 @@ def plot_heatmap(
     )
 
     # Get the order of the rows/columns after clustering
-    order = [df_pivot.index[i] for i in leaves_list(linkage_matrix)]
+    order = [row_labels[i] for i in leaves_list(linkage_matrix)]
 
     # Define filter fields for selected cells (only if interactive)
     if interactive:
@@ -90,7 +128,7 @@ def plot_heatmap(
         click = None
 
     # Create the heatmap using Altair
-    base = alt.Chart(df_pandas).mark_rect()
+    base = alt.Chart(df).mark_rect()
 
     # Add click parameter only if interactive
     if click is not None:
@@ -277,19 +315,6 @@ def plot_heatmap(
             click & (alt.datum.comparison_type == "cat-cat")
         )
 
-    # X axis labels - positioned to align with the detail chart
-    labels_x = (
-        alt.Chart(detailed_df)
-        .mark_text(align="center", strokeWidth=0.5, fontSize=12)
-        .encode(
-            text="Column 1:N",
-            x=alt.value(205),  # Center of the 350px wide detail chart (30 + 175)
-            y=alt.value(15),  # Below the detail chart
-        )
-    )
-    if click is not None:
-        labels_x = labels_x.transform_filter(click)
-
     # Y axis label - positioned to align with the detail chart
     labels_y = (
         alt.Chart(detailed_df)
@@ -316,16 +341,56 @@ def plot_heatmap(
         )
         .resolve_scale(x="shared", y="shared", color="independent")
         .resolve_legend(color="independent")
-        .properties(width=350, height=300),  # Increased width to accommodate legend
+        .properties(
+            width=400, height=300
+        ),  # Increased width to accommodate legend and prevent cutoff
+        spacing=5,
+    )
+
+    # X axis labels - positioned to align with the detail chart
+    # Create a chart that matches the main detail chart width for proper alignment
+    labels_x_chart = (
+        alt.Chart(detailed_df)
+        .mark_text(align="center", strokeWidth=0.5, fontSize=12)
+        .encode(
+            text="Column 1:N",
+            x=alt.value(200),  # Center of the 400px wide detail chart (400/2)
+            y=alt.value(15),  # Below the detail chart
+        )
+        .properties(width=400, height=30)  # Match the main detail chart width
+    )
+    if click is not None:
+        labels_x_chart = labels_x_chart.transform_filter(click)
+
+    # Create the detail section with proper horizontal alignment
+    # Use hconcat to include labels_x in the same horizontal layout as detail_charts
+    # Create an empty spacer chart to match the labels_y width
+    # Use detailed_df with a filter that never matches to avoid Arrow buffer alignment issues
+    spacer = (
+        alt.Chart(detailed_df)
+        .mark_text(opacity=0)
+        .transform_filter(alt.datum.comparison_type == "never-matches")
+        .properties(width=30, height=30)
+    )
+    detail_charts_with_labels = alt.hconcat(
+        spacer,  # Spacer to match labels_y width (30px)
+        labels_x_chart,
         spacing=5,
     )
 
     # Create the main layout with proper spacing
+    # Wrap detail_charts and labels_x in a vconcat to add title
+    detail_section = alt.vconcat(
+        detail_charts,
+        detail_charts_with_labels,
+    ).properties(title="2D Detailed View (click on heatmap cells)")
+
     chart = alt.vconcat(
         base.properties(title="Mutual Information Heatmap"),
-        detail_charts.properties(title="2D Detailed View (click on heatmap cells)"),
-        labels_x,
-    ).properties(padding={"left": 40, "right": 40, "top": 20, "bottom": 40}, spacing=20)
+        detail_section,
+    ).properties(
+        padding={"left": 60, "right": 130, "top": 40, "bottom": 80}, spacing=20
+    )
 
     # Apply interactivity if requested
     if interactive:
