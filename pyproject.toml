@@ -13,7 +13,6 @@ requires-python = ">=3.12"
 dependencies = [
   "polars>=1.7.1",
   "altair>=5.4.1",
-  "pandas>=2.2.3", # Need pandas because of altair
   "pyarrow>=18.1.0",
   "vegafusion>=1.6.9",
   "vegafusion-python-embed>=1.6.9",
@@ -23,9 +22,9 @@ dependencies = [
 
 [dependency-groups]
 dev = [
-  "black>=24.8.0",
   "jupyter>=1.1.1",
   "pytest>=8.3.3",
+  "ruff>=0.13.2",
 ]
 
 [build-system]
