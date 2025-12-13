@@ -1,8 +1,7 @@
 import altair
 import polars as pl
 
-from lpm_plot import plot_marginal_1d
-from lpm_plot import plot_marginal_2d
+from lpm_plot import plot_marginal_1d, plot_marginal_2d
 
 
 def test_plot_marginal_1d_smoke():

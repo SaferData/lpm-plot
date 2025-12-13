@@ -1,5 +1,5 @@
-import polars as pl
 import altair
+import polars as pl
 
 from lpm_plot import plot_fidelity
 
