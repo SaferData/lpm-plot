@@ -46,7 +46,7 @@ def plot_lines(
     )
 
     chart = (
-        alt.Chart(df.to_pandas())
+        alt.Chart(df)
         .mark_line()
         .encode(
             x=alt.X("x:Q", title=x_title),
