@@ -329,6 +329,7 @@ def plot_marginal_numerical_categorical(
     y: str,
     size: float = 30.0,
     y_domain: tuple[float, float] = [None, None],
+    jitter: bool = False,
 ):
     """
     Plots 2D marginal box plot comparing numerical vs categorical observed and synthetic data
@@ -353,6 +354,8 @@ def plot_marginal_numerical_categorical(
         y_domain : tuple[float, float], optional
             The domain of the y-axis and defaults to min and max of data. If None is provided instead of a min
             or a max, then the program will default to using the min or max of the data respectively.
+        jitter: bool, optional
+            Whether to create on the data points on the categorical axis, rather make a box plot. The default is False.
 
     Returns:
         alt.Chart: An Altair chart object containing the box plot.
@@ -369,27 +372,52 @@ def plot_marginal_numerical_categorical(
         combined_df[y].min() if y_domain[0] is None else y_domain[0],
         combined_df[y].max() if y_domain[1] is None else y_domain[1],
     ]
-
-    return (
-        alt.Chart(combined_df)
-        .mark_boxplot(size=size, outliers=True)
-        .encode(
-            x=alt.X(f"{x}:N", scale=alt.Scale(padding=0.5)),
-            y=alt.Y(f"{y}:Q", scale=alt.Scale(domain=y_domain)),
-            color=alt.Color(
-                "dataset:N",
-                scale=alt.Scale(
-                    domain=["Observed", "Synthetic"],
-                    range=[OBSERVED_COLOR, SYNTHETIC_COLOR],
+    if jitter:
+        combined_df = combined_df.with_columns(pl.lit(size).alias("offset_size"))
+        return (
+            alt.Chart(combined_df)
+            .mark_circle(size=size)
+            .encode(
+                x=alt.X(f"{x}:N", scale=alt.Scale(padding=0.5)),
+                y=alt.Y(f"{y}:Q", scale=alt.Scale(domain=y_domain)),
+                color=alt.Color(
+                    "dataset:N",
+                    scale=alt.Scale(
+                        domain=["Observed", "Synthetic"],
+                        range=[OBSERVED_COLOR, SYNTHETIC_COLOR],
+                    ),
                 ),
-            ),
-            xOffset=alt.XOffset(
-                "dataset:N",
-                scale=alt.Scale(
-                    domain=["Observed", "Synthetic"],
-                    range=[-size, size],
-                ),
-            ),
+                xOffset=alt.XOffset("xOffsetWithJitter:Q"),
+            )
+            .transform_calculate(
+                # Generate Gaussian jitter with a Box-Muller transform for the categorical axis
+                xJitter="sqrt(-2*log(random()))*cos(2*PI*random())",
+                # Combine dataset offset with x jitter (scale jitter to 30% of offset_size)
+                xOffsetWithJitter="(datum.dataset == 'Observed' ? -datum.offset_size : datum.offset_size) + datum.xJitter * datum.offset_size * 0.3",
+            )
+            .properties(width=(size * 2 + 50) * combined_df[x].n_unique(), height=400)
         )
-        .properties(width=(size * 2 + 50) * combined_df[x].n_unique(), height=400)
-    )
+    else:
+        return (
+            alt.Chart(combined_df)
+            .mark_boxplot(size=size, outliers=True)
+            .encode(
+                x=alt.X(f"{x}:N", scale=alt.Scale(padding=0.5)),
+                y=alt.Y(f"{y}:Q", scale=alt.Scale(domain=y_domain)),
+                color=alt.Color(
+                    "dataset:N",
+                    scale=alt.Scale(
+                        domain=["Observed", "Synthetic"],
+                        range=[OBSERVED_COLOR, SYNTHETIC_COLOR],
+                    ),
+                ),
+                xOffset=alt.XOffset(
+                    "dataset:N",
+                    scale=alt.Scale(
+                        domain=["Observed", "Synthetic"],
+                        range=[-size, size],
+                    ),
+                ),
+            )
+            .properties(width=(size * 2 + 50) * combined_df[x].n_unique(), height=400)
+        )
