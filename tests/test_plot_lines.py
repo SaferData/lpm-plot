@@ -47,3 +47,16 @@ def test_plot_lines_y_scale_default():
     spec = chart.to_dict(format="vega")
     # Default is linear scale
     assert spec["scales"][1]["type"] == "linear"
+
+
+# %%
+
+if __name__ == "__main__":
+    data = {
+        "train_loss": [5.0, 3.5, 2.8, 2.2, 1.9, 1.6, 1.4],
+        "val_loss": [5.2, 3.8, 3.2, 2.8, 2.5, 2.3, 2.1],
+        "test_loss": [5.5, 4.0, 3.5, 3.0, 2.7, 2.5, 2.3],
+    }
+    chart = plot_lines(data, x_title="Epoch", y_title="Loss")
+    chart.show()
+# %%

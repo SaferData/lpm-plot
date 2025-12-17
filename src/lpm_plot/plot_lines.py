@@ -49,7 +49,7 @@ def plot_lines(
         alt.Chart(df)
         .mark_line()
         .encode(
-            x=alt.X("x:Q", title=x_title),
+            x=alt.X("x:O", title=x_title, axis=alt.Axis(labelAngle=0)),
             y=alt.Y(
                 "y:Q",
                 title=y_title,
