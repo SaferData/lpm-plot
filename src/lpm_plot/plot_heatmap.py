@@ -114,7 +114,23 @@ def plot_heatmap(
     )
 
     # Get the order of the rows/columns after clustering
-    order = [row_labels[i] for i in leaves_list(linkage_matrix)]
+    sums_col1 = (
+        df.group_by("Column 1").agg(pl.col("Score").sum()).rename({"Score": "sum_col1"})
+    )
+
+    sums_col2 = (
+        df.group_by("Column 2").agg(pl.col("Score").sum()).rename({"Score": "sum_col2"})
+    )
+
+    df = df.join(sums_col1, on="Column 1")
+    df = df.join(sums_col2, on="Column 2")
+    df = df.sort("sum_col1", "sum_col2", descending=True)
+    print(df)
+
+    order = df["Column 1"].unique().to_list()
+    order_y = df["Column 2"].unique().to_list()
+    # print([(o, o.type()) for o in order])
+    print(order)
 
     # Define filter fields for selected cells (only if interactive)
     if interactive:
@@ -139,20 +155,36 @@ def plot_heatmap(
             "Column 1:N",
             title="Column 1",
             sort=order,  # Replace with your desired order
+            axis=alt.Axis(
+                labelFontSize=7,
+                labelColor="#666666",
+                labelSeparation=10,
+            ),
         ),
         y=alt.Y(
             "Column 2:N",
             title="Column 2",
-            sort=order,  # Replace with your desired order
+            sort=order_y,  # Replace with your desired order
+            axis=alt.Axis(
+                labelFontSize=7,
+                labelColor="#666666",
+                labelSeparation=10,
+            ),
         ),
         color=alt.condition(
             alt.datum.Score == 0,
             alt.value("white"),
             alt.Color(
-                "Score:Q", scale=alt.Scale(scheme=cmap_main), legend=alt.Legend()
+                "Score:Q",
+                scale=alt.Scale(scheme=cmap_main),
+                legend=alt.Legend(title="Mutual Information Score"),
             ),
         ),
-        tooltip=["Column 1", "Column 2", "Score:Q"],
+        tooltip=[
+            "Column 1",
+            "Column 2",
+            alt.Tooltip("Score:Q", title="Mutual Information Score"),
+        ],
     ).properties(width=400, height=400)  # Default scale
 
     # Return heatmap if no detailed data is provided
@@ -318,7 +350,7 @@ def plot_heatmap(
     # Y axis label - positioned to align with the detail chart
     labels_y = (
         alt.Chart(detailed_df)
-        .mark_text(angle=270, strokeWidth=0.5, fontSize=12)
+        .mark_text(angle=270, strokeWidth=0.5, fontSize=5)
         .encode(
             text="Column 2:N",
             x=alt.value(15),  # Left of the detail chart
@@ -351,7 +383,7 @@ def plot_heatmap(
     # Create a chart that matches the main detail chart width for proper alignment
     labels_x_chart = (
         alt.Chart(detailed_df)
-        .mark_text(align="center", strokeWidth=0.5, fontSize=12)
+        .mark_text(align="center", strokeWidth=0.5, fontSize=5)
         .encode(
             text="Column 1:N",
             x=alt.value(200),  # Center of the 400px wide detail chart (400/2)
@@ -505,7 +537,7 @@ def reformat_data(
             pl.when(pl.col("Column 1") == pl.col("Column 2"))
             .then(pl.lit(0.0))
             .otherwise(pl.col("Score"))
-            .alias("Score")
+            .alias("Mutual Information Score")
         ),
         detail_df,
     )
