@@ -1,8 +1,6 @@
 import altair as alt
 import polars as pl
 
-alt.data_transformers.enable("vegafusion")
-
 METRICS = {
     "tvd": "Total variation distance",
     "kl": "Kullback–Leibler divergence",

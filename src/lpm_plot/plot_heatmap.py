@@ -1,4 +1,5 @@
 import altair as alt
+import numpy as np
 import polars as pl
 from scipy.cluster.hierarchy import leaves_list, linkage
 from scipy.spatial.distance import squareform
@@ -97,12 +98,16 @@ def plot_heatmap(
     if missing_cols:
         for col in missing_cols:
             df_pivot = df_pivot.with_columns(pl.lit(None).alias(col))
-        # Reorder columns to match all_unique_values
-        df_pivot = df_pivot.select(["Column 1"] + all_unique_values)
-        data_columns = all_unique_values
+
+    # Ensure rows and columns are in the same order so the diagonal is correct
+    df_pivot = df_pivot.sort("Column 1")
+    row_labels = df_pivot["Column 1"].to_list()
+    df_pivot = df_pivot.select(["Column 1"] + row_labels)
+    data_columns = row_labels
 
     # Extract the data matrix (excluding the "Column 1" column) and convert to numpy
     data_matrix = df_pivot.select(data_columns).fill_null(0).to_numpy()
+    np.fill_diagonal(data_matrix, 1.0)
 
     # Create a condensed distance matrix from the pivoted matrix
     distance_matrix = 1 - data_matrix
@@ -127,6 +132,14 @@ def plot_heatmap(
     else:
         click = None
 
+    # Set diagonal (self-comparison) scores to 1.0 for display
+    df = df.with_columns(
+        pl.when(pl.col("Column 1") == pl.col("Column 2"))
+        .then(pl.lit(1.0))
+        .otherwise(pl.col("Score"))
+        .alias("Score")
+    )
+
     # Create the heatmap using Altair
     base = alt.Chart(df).mark_rect()
 
@@ -138,12 +151,12 @@ def plot_heatmap(
         x=alt.X(
             "Column 1:N",
             title="Column 1",
-            sort=order,  # Replace with your desired order
+            sort=order,
         ),
         y=alt.Y(
             "Column 2:N",
             title="Column 2",
-            sort=order,  # Replace with your desired order
+            sort=order,
         ),
         color=alt.condition(
             alt.datum.Score == 0,
@@ -503,7 +516,7 @@ def reformat_data(
         # Make all self-comparisons have a score of 0 in heatmap_df
         heatmap_df.with_columns(
             pl.when(pl.col("Column 1") == pl.col("Column 2"))
-            .then(pl.lit(0.0))
+            .then(pl.lit(1.0))
             .otherwise(pl.col("Score"))
             .alias("Score")
         ),

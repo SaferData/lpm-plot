@@ -4,8 +4,6 @@ import polars as pl
 OBSERVED_COLOR = "#000000"
 SYNTHETIC_COLOR = "#f28e2b"
 
-alt.data_transformers.enable("vegafusion")
-
 
 def get_max_frequency(column, data):
     "Calculate the maximum frequency value for a given column. This is used to align the axes of the comparison plots."

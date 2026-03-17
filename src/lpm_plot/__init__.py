@@ -9,3 +9,7 @@ from .plot_marginal import (
     plot_marginal_numerical_categorical,
     plot_marginal_numerical_numerical,
 )
+
+import altair as alt
+
+alt.data_transformers.enable("default", max_rows=None)

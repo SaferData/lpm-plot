@@ -1,8 +1,6 @@
 import altair as alt
 import polars as pl
 
-alt.data_transformers.enable("vegafusion")
-
 
 def plot_lines(
     data: dict[str, list[float]],
