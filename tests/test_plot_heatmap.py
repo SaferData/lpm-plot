@@ -24,6 +24,13 @@ def test_plot_heatmap_smoke():
     )
 
 
+def test_cluster_order():
+    df = pl.read_csv("tests/resources/heatmap-test-data.csv")
+    chart = plot_heatmap(df, interactive=False)
+    sort_order = chart.encoding.x.to_dict()["sort"]
+    assert sort_order == ["num1", "num2", "cat1", "cat2"]
+
+
 # %%
 if __name__ == "__main__":
     import polars as pl

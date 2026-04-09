@@ -72,10 +72,7 @@ def plot_heatmap(
         values="Score", index="Column 1", on="Column 2", aggregate_function="first"
     )
 
-    # Get the row labels (Column 1 values) - ensure all unique values are present
-    row_labels = df_pivot["Column 1"].to_list()
-    # Ensure all rows are present (add missing rows with nulls)
-    missing_rows = set(all_unique_values) - set(row_labels)
+    missing_rows = set(all_unique_values) - set(df_pivot["Column 1"].to_list())
     if missing_rows:
         missing_df = pl.DataFrame(
             {
@@ -88,38 +85,21 @@ def plot_heatmap(
             }
         )
         df_pivot = pl.concat([df_pivot, missing_df])
-        # Re-sort to match all_unique_values order
-        df_pivot = df_pivot.sort("Column 1")
-        row_labels = df_pivot["Column 1"].to_list()
 
-    # Get data columns (Column 2 values) - ensure all unique values are present as columns
-    data_columns = [col for col in df_pivot.columns if col != "Column 1"]
-    missing_cols = set(all_unique_values) - set(data_columns)
-    if missing_cols:
-        for col in missing_cols:
-            df_pivot = df_pivot.with_columns(pl.lit(None).alias(col))
+    for col in set(all_unique_values) - set(df_pivot.columns):
+        df_pivot = df_pivot.with_columns(pl.lit(None).alias(col))
 
-    # Ensure rows and columns are in the same order so the diagonal is correct
-    df_pivot = df_pivot.sort("Column 1")
-    row_labels = df_pivot["Column 1"].to_list()
-    df_pivot = df_pivot.select(["Column 1"] + row_labels)
-    data_columns = row_labels
+    df_pivot = df_pivot.sort("Column 1").select(["Column 1"] + all_unique_values)
+    data_matrix = df_pivot.select(all_unique_values).fill_null(0).to_numpy()
 
-    # Extract the data matrix (excluding the "Column 1" column) and convert to numpy
-    data_matrix = df_pivot.select(data_columns).fill_null(0).to_numpy()
-    np.fill_diagonal(data_matrix, 1.0)
-
-    # Create a condensed distance matrix from the pivoted matrix
     distance_matrix = 1 - data_matrix
-    condensed_matrix = distance_matrix  # Already a numpy array
+    np.fill_diagonal(distance_matrix, 0)
 
-    # Perform hierarchical clustering
     linkage_matrix = linkage(
-        squareform(condensed_matrix, checks=False), method="average"
+        squareform(distance_matrix, checks=False), method="average"
     )
 
-    # Get the order of the rows/columns after clustering
-    order = [row_labels[i] for i in leaves_list(linkage_matrix)]
+    order = [all_unique_values[i] for i in leaves_list(linkage_matrix)]
 
     # Define filter fields for selected cells (only if interactive)
     if interactive:
